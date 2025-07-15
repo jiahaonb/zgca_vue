@@ -1,5 +1,5 @@
 """
-多智能体剧本编辑系统主程序
+浮生：多Agent驱动的沉浸式文化互动剧场主程序
 基于调度agent和多个角色agents的架构
 """
 
@@ -11,7 +11,7 @@ def print_welcome():
     打印欢迎信息
     """
     print("🎭" + "=" * 58 + "🎭")
-    print("    欢迎使用多智能体剧本编辑系统！")
+    print("    欢迎使用浮生：多Agent驱动的沉浸式文化互动剧场！")
     print("=" * 60)
     print("✨ 系统特点：")
     print("  - 👤 用户主角：您将作为主角参与剧本对话")
@@ -166,14 +166,14 @@ def main():
                 script_system.clear_history()
             
             elif choice == '6':
-                print("👋 感谢使用多智能体剧本编辑系统，再见！")
+                print("👋 感谢使用浮生：多Agent驱动的沉浸式文化互动剧场，再见！")
                 break
             
             else:
                 print("❌ 无效选择，请输入1-6之间的数字")
         
         except KeyboardInterrupt:
-            print("\n👋 感谢使用多智能体剧本编辑系统，再见！")
+            print("\n👋 感谢使用浮生：多Agent驱动的沉浸式文化互动剧场，再见！")
             break
         except Exception as e:
             print(f"❌ 发生未知错误: {str(e)}")

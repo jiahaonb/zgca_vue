@@ -114,14 +114,15 @@ class SchedulerAgent:
         characters_match = re.search(r'【主要角色】\s*\n(.*?)(?=【|$)', script_setting, re.DOTALL)
         if characters_match:
             characters_text = characters_match.group(1).strip()
-            # 解析角色信息（格式：角色名|性格特点|背景）
+            # 解析角色信息（格式：角色名|角色姓名|性格特点）
             character_lines = [line.strip() for line in characters_text.split('\n') if line.strip()]
             for line in character_lines:
                 if '|' in line:
                     parts = line.split('|')
                     if len(parts) >= 2:
                         character_name = parts[0].strip()
-                        character_info = '|'.join(parts[1:]).strip()
+                        character_name += '（' + parts[1].strip() + '）'
+                        character_info = '|'.join(parts[2:]).strip()
                         result["characters"].append({
                             "name": character_name,
                             "info": character_info
@@ -171,15 +172,30 @@ class SchedulerAgent:
             user_name = user_character["name"]
             user_info = user_character["info"]
             
-            # 如果用户角色名包含括号（如"我（黄盖）"），提取角色信息
+            # 提取用户扮演的具体角色名
             import re
-            character_match = re.match(r'我（([^）]+)）', user_name)
-            if character_match:
-                # 提取到具体角色名（如"黄盖"）
-                extracted_character = character_match.group(1)
+            extracted_character = None
+            
+            # 检查格式1：我|角色名|描述 (如: 我|荆轲|燕国刺客...)
+            if '|' in user_name:
+                print(name_parts)
+                name_parts = user_name.split('|')
+                if len(name_parts) >= 2 and name_parts[0].strip() == USER_CHARACTER_NAME:
+                    extracted_character = name_parts[1].strip()
+                    print(f"🎭 从剧本设定中识别用户角色 (格式: 我|角色名): {extracted_character}")
+            
+            # 检查格式2：我（角色名） (如: 我（黄盖）)
+            if not extracted_character:
+                character_match = re.match(r'我（([^）]+)）', user_name)
+                if character_match:
+                    extracted_character = character_match.group(1)
+                    print(f"🎭 从剧本设定中识别用户角色 (格式: 我（角色名）): {extracted_character}")
+            
+            # 设置用户角色
+            if extracted_character:
                 self.user_current_character = extracted_character
                 self.user_character_info = user_info
-                print(f"🎭 从剧本设定中识别用户角色: {extracted_character}")
+                print(f"✅ 用户当前扮演角色已设置为: {extracted_character}")
             else:
                 # 没有具体角色信息，保持原有的用户角色状态
                 if not self.user_current_character:

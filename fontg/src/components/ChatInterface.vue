@@ -393,14 +393,16 @@ export default {
             
             // 首先检查是否已有场景图片（后端可能已生成）
             setTimeout(async () => {
+              console.log('🔍 开始检查初始场景图片...')
               await checkLatestImage()
               
               // 如果还没有图片，则等待更长时间后再次检查
               if (!sceneImageUrl.value) {
                 console.log('🖼️ 第一次检查未发现图片，等待后台生成...')
                 
-                // 再等待5秒后检查
+                // 再等待8秒后检查（给后台图片生成更多时间）
                 setTimeout(async () => {
+                  console.log('🔍 第二次检查场景图片...')
                   await checkLatestImage()
                   
                   // 如果还是没有图片，则手动生成
@@ -410,11 +412,11 @@ export default {
                   } else {
                     console.log('🖼️ 检测到后台生成的场景图片')
                   }
-                }, 5000) // 再等5秒
+                }, 8000) // 再等8秒
               } else {
                 console.log('🖼️ 检测到已有场景图片，无需重新生成')
               }
-            }, 3000) // 延迟3秒，给后端初始图片生成更多时间
+            }, 2000) // 延迟2秒，给后端初始图片生成时间
             
             // 启动图片自动更新检查
             startImageAutoUpdate()
@@ -1253,13 +1255,16 @@ export default {
         const result = await apiService.getLatestSceneImage()
         
         if (result.success && result.image_url) {
-          const newImageUrl = apiService.api.defaults.baseURL + result.image_url
+          // 构建完整的图片URL
+          const newImageUrl = apiService.getBaseURL() + result.image_url
           
           // 检查图片是否有更新
           if (newImageUrl !== lastImageUrl.value) {
             console.log('🖼️ 检测到新的场景图片，正在更新...')
             sceneImageUrl.value = newImageUrl
             lastImageUrl.value = newImageUrl
+            // 强制更新DOM以显示新图片
+            await nextTick()
           }
         }
       } catch (error) {

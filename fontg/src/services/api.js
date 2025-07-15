@@ -224,10 +224,23 @@ class ApiService {
     }
   }
 
-  // 获取场景图片URL
+  // 获取场景图片URL（已废弃，现在使用getLatestSceneImage）
   getSceneImageUrl() {
-    const baseURL = api.defaults.baseURL || 'http://localhost:5000'
-    return `${baseURL}/scene-image`
+    // 构建基础URL
+    const protocol = typeof window !== 'undefined' ? window.location.protocol : 'http:'
+    const host = typeof window !== 'undefined' ? window.location.host : 'localhost:3000'
+    return `${protocol}//${host}/scene-image`
+  }
+
+  // 获取基础URL
+  getBaseURL() {
+    // 图片文件通过后端提供，需要使用后端的端口
+    if (typeof window !== 'undefined') {
+      const protocol = window.location.protocol
+      const hostname = window.location.hostname
+      return `${protocol}//${hostname}:8900` // 后端端口
+    }
+    return 'http://localhost:8900' // 后端端口
   }
 
   // 获取最新场景图片信息
