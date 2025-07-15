@@ -153,16 +153,60 @@ class ApiService {
     }
   }
 
-  // 语音输入识别
-  async voiceInput(duration = 5, round = 1) {
+  // 开始语音录音
+  async startVoiceRecording() {
     try {
-      const response = await api.post('/voice-input', {
-        duration,
+      const response = await api.post('/voice-start')
+      return response.data
+    } catch (error) {
+      throw new Error(`开始录音失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
+
+  // 停止语音录音并识别
+  async stopVoiceRecording(round = 1) {
+    try {
+      const response = await api.post('/voice-stop', {
         round
       })
       return response.data
     } catch (error) {
-      throw new Error(`语音识别失败: ${error.response?.data?.error || error.message}`)
+      throw new Error(`停止录音失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
+
+  // 获取语音录音状态
+  async getVoiceStatus() {
+    try {
+      const response = await api.get('/voice-status')
+      return response.data
+    } catch (error) {
+      throw new Error(`获取录音状态失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
+
+  // 获取用户对话选项
+  async getDialogueOptions(round = 1) {
+    try {
+      const response = await api.post('/get-dialogue-options', {
+        round
+      })
+      return response.data
+    } catch (error) {
+      throw new Error(`获取对话选项失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
+
+  // 选择对话选项
+  async selectDialogue(selectedText, round = 1) {
+    try {
+      const response = await api.post('/select-dialogue', {
+        selected_text: selectedText,
+        round
+      })
+      return response.data
+    } catch (error) {
+      throw new Error(`选择对话失败: ${error.response?.data?.error || error.message}`)
     }
   }
 }

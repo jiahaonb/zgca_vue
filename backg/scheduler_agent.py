@@ -43,6 +43,10 @@ class SchedulerAgent:
         self.plot_summary = ""
         self.conversation_history = []
         
+        # 用户当前扮演的角色信息
+        self.user_current_character = None  # 用户当前扮演的角色名
+        self.user_character_info = None     # 用户扮演角色的详细信息
+    
     def create_script_setting(self, user_input: str) -> Dict[str, Any]:
         """
         根据用户输入创建剧本设定
@@ -391,15 +395,32 @@ class SchedulerAgent:
 
     def generate_user_dialogue(self, max_tokens: int = 150) -> List[str]:
         """
-        根据历史上下文生成用户主角两个方向不同的对话内容建议
+        根据历史上下文生成基于历史人物角色的对话建议
 
         Args:
             max_tokens: 生成内容的最大长度
 
         Returns:
-            两个方向不同的对话建议列表
+            包含历史人物角色信息的对话建议列表，格式："[角色名] 台词内容"
         """
         try:
+            # 获取可用的历史人物角色（排除用户角色"我"）
+            available_characters = []
+            for char_name, char_agent in self.characters.items():
+                if char_name != USER_CHARACTER_NAME:
+                    available_characters.append({
+                        'name': char_name,
+                        'info': char_agent.character_info
+                    })
+
+            # 如果没有可用角色，返回默认选项
+            if not available_characters:
+                return ["[用户] 我认为我们应该推进这个方案", "[用户] 这个方案是不是风险太大了？"]
+
+            # 选择2个不同的历史人物角色
+            import random
+            selected_characters = random.sample(available_characters, min(2, len(available_characters)))
+            
             # 构建对话上下文
             context = "\n".join([
                 f"场景设定: {self.scene_setting}",
@@ -408,65 +429,52 @@ class SchedulerAgent:
                 *[f"- {line}" for line in self.conversation_history[-6:]]
             ])
 
-            # 使用对比生成提示
-            prompt = f"""
-    你是一个专业的剧本创作助手，正在为{USER_CHARACTER_NAME}生成台词建议。
+            dialogues = []
+            
+            for character in selected_characters:
+                # 为每个角色生成台词
+                prompt = f"""
+你是一个专业的剧本创作助手，现在需要为历史人物{character['name']}生成台词。
 
-    当前上下文：
-    {context}
+角色信息：{character['info']}
 
-    请生成两个方向完全不同的台词建议，要求：
-    1. 第一个建议采用积极/推进剧情的风格
-    2. 第二个建议采用谨慎/质疑的风格
-    3. 每个建议不超过15个词
-    4. 符合{USER_CHARACTER_NAME}的角色设定
+当前上下文：
+{context}
 
-    请按照以下格式返回：
-    积极建议: <台词内容>
-    谨慎建议: <台词内容>
-    """
-            response = self.client.chat.completions.create(
-                model=DEEPSEEK_MODEL,
-                messages=[
-                    {"role": "system", "content": "你擅长生成多样化的对话建议"},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.8,  # 提高创造性
-                max_tokens=max_tokens,
-                stream=False
-            )
+请以{character['name']}的身份和性格特点，生成一句符合当前情境的台词。
+要求：
+1. 台词长度不超过20个字
+2. 体现{character['name']}的性格特征
+3. 符合当前剧情发展
+4. 只返回台词内容，不要添加其他说明
 
-            # 解析生成结果
-            generated_text = response.choices[0].message.content.strip()
+台词：
+"""
+                
+                response = self.client.chat.completions.create(
+                    model=DEEPSEEK_MODEL,
+                    messages=[
+                        {"role": "system", "content": f"你擅长模拟历史人物{character['name']}的语言风格和性格特点"},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.8,
+                    max_tokens=max_tokens,
+                    stream=False
+                )
 
-            # 提取两种建议
-            positive_suggestion = ""
-            cautious_suggestion = ""
+                dialogue = response.choices[0].message.content.strip()
+                # 去掉可能的引号和多余字符
+                dialogue = dialogue.strip('"\'').strip()
+                
+                # 格式化为 "[角色名] 台词内容"
+                formatted_dialogue = f"[{character['name']}] {dialogue}"
+                dialogues.append(formatted_dialogue)
 
-            for line in generated_text.split('\n'):
-                line = line.strip()
-                if line.startswith('积极建议:'):
-                    positive_suggestion = line.split(':', 1)[1].strip()
-                elif line.startswith('谨慎建议:'):
-                    cautious_suggestion = line.split(':', 1)[1].strip()
-
-            # 确保两个建议不相同
-            if positive_suggestion and cautious_suggestion and positive_suggestion != cautious_suggestion:
-                return [positive_suggestion, cautious_suggestion]
-
-            # 如果解析失败，使用备选方案
-            suggestions = []
-            for line in generated_text.split('\n'):
-                line = line.strip()
-                if line and len(suggestions) < 2 and line not in suggestions:
-                    suggestions.append(line.split(':', 1)[-1].strip() if ':' in line else line)
-
-            return suggestions[:2] if len(suggestions) >= 2 else ["我认为我们应该推进这个方案",
-                                                                  "这个方案是不是风险太大了？"]
+            return dialogues if len(dialogues) >= 2 else dialogues + ["[用户] 我们继续推进剧情吧"]
 
         except Exception as e:
             print(f"❌ 台词生成失败: {str(e)}")
-            return ["我觉得这个主意不错", "我们是否需要再考虑一下？"]
+            return ["[用户] 我觉得这个主意不错", "[用户] 我们是否需要再考虑一下？"]
 
     def text_to_image(self,prompt,save_dir='./output'):
         print('----sync call, please wait a moment----')
@@ -551,3 +559,55 @@ class SchedulerAgent:
         except Exception as e:
             print(f"❌ 图片生成出错: {str(e)}")
             return None
+    
+    def set_user_character(self, character_name: str) -> bool:
+        """
+        设置用户当前扮演的角色
+        
+        Args:
+            character_name: 角色名
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        try:
+            if character_name in self.characters:
+                self.user_current_character = character_name
+                self.user_character_info = self.characters[character_name].character_info
+                print(f"✅ 用户角色已设置为: {character_name}")
+                return True
+            else:
+                print(f"❌ 角色 {character_name} 不存在")
+                return False
+        except Exception as e:
+            print(f"❌ 设置用户角色失败: {str(e)}")
+            return False
+    
+    def get_user_character(self) -> tuple:
+        """
+        获取用户当前扮演的角色信息
+        
+        Returns:
+            tuple: (角色名, 角色信息)
+        """
+        return self.user_current_character, self.user_character_info
+    
+    def clear_user_character(self):
+        """
+        清除用户角色设置
+        """
+        self.user_current_character = None
+        self.user_character_info = None
+        print("✅ 用户角色设置已清除")
+    
+    def get_user_character_context(self) -> str:
+        """
+        获取用户角色的上下文信息，用于传递给大模型
+        
+        Returns:
+            str: 用户角色上下文信息
+        """
+        if self.user_current_character and self.user_character_info:
+            return f"用户当前扮演角色：{self.user_current_character}\n角色信息：{self.user_character_info}"
+        else:
+            return "用户尚未选择扮演角色"

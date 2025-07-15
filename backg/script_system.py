@@ -137,7 +137,8 @@ class ScriptSystem:
             
             # 生成角色回应
             # print(current_situation)
-            character_response = character_agent.generate_response(current_situation)
+            user_character_context = self.scheduler.get_user_character_context()
+            character_response = character_agent.generate_response(current_situation, user_character_context)
             
             # 输出回应
             print(f"💬 {character_response}")
@@ -321,7 +322,8 @@ class ScriptSystem:
                     continue
                 
                 # 生成角色回应
-                character_response = character_agent.generate_response(current_situation)
+                user_character_context = self.scheduler.get_user_character_context()
+                character_response = character_agent.generate_response(current_situation, user_character_context)
                 
                 # 输出回应
                 print(f"💬 {character_response}")

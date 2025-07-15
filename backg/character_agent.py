@@ -58,12 +58,13 @@ class CharacterAgent:
         """
         self.conversation_history.append(message)
         
-    def generate_response(self, current_situation: str = "") -> str:
+    def generate_response(self, current_situation: str = "", user_character_info: str = "") -> str:
         """
         生成角色回应
         
         Args:
             current_situation: 当前情况描述
+            user_character_info: 用户当前扮演的角色信息
             
         Returns:
             角色的回应
@@ -77,6 +78,10 @@ class CharacterAgent:
                 plot_summary=self.plot_summary
             )
             
+            # 如果有用户角色信息，添加到系统提示词中
+            if user_character_info and user_character_info != "用户尚未选择扮演角色":
+                system_prompt += f"\n\n重要提示：{user_character_info}\n请在回应时考虑用户所扮演角色的身份和特点。"
+            
             # 构建用户输入
             conversation_context = "\n".join(self.conversation_history[-10:])  # 最近10条对话
             user_input = f"""
@@ -84,6 +89,8 @@ class CharacterAgent:
 {conversation_context}
 
 当前情况：{current_situation}
+
+{user_character_info if user_character_info else ""}
 
 请以{self.character_name}的身份回应：
 """

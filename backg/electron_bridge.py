@@ -172,8 +172,11 @@ class ElectronBridge:
                         'error': f'找不到角色 {next_speaker} 的智能体'
                     }), 500
                 
+                # 获取用户角色信息
+                user_character_context = self.script_system.scheduler.get_user_character_context()
+                
                 # 生成AI回应
-                ai_response = character_agent.generate_response(situation)
+                ai_response = character_agent.generate_response(situation, user_character_context)
                 
                 # 添加AI回应到历史记录
                 self.script_system.scheduler.add_to_history(ai_response)
@@ -255,14 +258,48 @@ class ElectronBridge:
                     'error': f'清空历史失败: {str(e)}'
                 }), 500
         
-        @self.app.route('/api/voice-input', methods=['POST'])
-        def voice_input():
-            """语音输入识别"""
+        @self.app.route('/api/voice-start', methods=['POST'])
+        def voice_start():
+            """开始语音录音"""
             try:
-                from record_voc import record_and_recognize
+                from web_voice_recorder import voice_recorder
+                
+                if not self.script_system or not self.script_system.is_initialized:
+                    return jsonify({
+                        'success': False,
+                        'error': '请先创建剧本设定'
+                    }), 400
+                
+                logger.info("开始语音录音")
+                result = voice_recorder.start_recording()
+                
+                if result['success']:
+                    logger.info("语音录音已开始")
+                else:
+                    logger.error(f"开始录音失败: {result['error']}")
+                
+                return jsonify(result)
+                
+            except ImportError as e:
+                logger.error(f"语音录音模块导入失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': '语音录音功能不可用'
+                }), 500
+            except Exception as e:
+                logger.error(f"开始录音失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'开始录音失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/voice-stop', methods=['POST'])
+        def voice_stop():
+            """停止语音录音并识别"""
+            try:
+                from web_voice_recorder import voice_recorder
                 
                 data = request.get_json()
-                duration = data.get('duration', 5)  # 默认录音5秒
                 round_num = data.get('round', 1)
                 
                 if not self.script_system or not self.script_system.is_initialized:
@@ -271,43 +308,173 @@ class ElectronBridge:
                         'error': '请先创建剧本设定'
                     }), 400
                 
-                logger.info(f"开始语音识别 (第{round_num}轮), 录音时长: {duration}秒")
+                logger.info(f"停止语音录音并识别 (第{round_num}轮)")
                 
-                # 调用语音识别
-                recognized_text = record_and_recognize(duration=duration)
+                # 停止录音并识别
+                result = voice_recorder.stop_recording_and_recognize()
                 
-                if not recognized_text or recognized_text in ["识别失败", "解析返回内容失败"]:
+                if result['success']:
+                    recognized_text = result['recognized_text']
+                    logger.info(f"语音识别结果: {recognized_text}")
+                    
+                    # 直接将识别结果作为用户发言处理
+                    user_response = f"我：{recognized_text}"
+                    self.script_system.scheduler.add_to_history(user_response)
+                    self.script_system.last_speaker = "我"
+                    self.script_system.conversation_count += 1
+                    
+                    return jsonify({
+                        'success': True,
+                        'recognized_text': recognized_text,
+                        'formatted_message': user_response,
+                        'round': round_num
+                    })
+                else:
+                    logger.error(f"语音识别失败: {result['error']}")
+                    return jsonify(result), 400
+                
+            except ImportError as e:
+                logger.error(f"语音录音模块导入失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': '语音录音功能不可用'
+                }), 500
+            except Exception as e:
+                logger.error(f"停止录音失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'停止录音失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/voice-status', methods=['GET'])
+        def voice_status():
+            """获取语音录音状态"""
+            try:
+                from web_voice_recorder import voice_recorder
+                result = voice_recorder.get_status()
+                return jsonify({
+                    'success': True,
+                    'is_recording': result['is_recording']
+                })
+            except ImportError as e:
+                return jsonify({
+                    'success': False,
+                    'error': '语音录音功能不可用'
+                }), 500
+            except Exception as e:
+                return jsonify({
+                    'success': False,
+                    'error': f'获取状态失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/get-dialogue-options', methods=['POST'])
+        def get_dialogue_options():
+            """获取用户对话选项"""
+            try:
+                if not self.script_system or not self.script_system.is_initialized:
                     return jsonify({
                         'success': False,
-                        'error': '语音识别失败，请重试'
+                        'error': '请先创建剧本设定'
                     }), 400
                 
-                logger.info(f"语音识别结果: {recognized_text}")
+                data = request.get_json()
+                round_num = data.get('round', 1)
                 
-                # 直接将识别结果作为用户发言处理
-                user_response = f"我：{recognized_text}"
+                logger.info(f"获取用户对话选项 (第{round_num}轮)")
+                
+                # 生成对话选项
+                dialogue_options = self.script_system.scheduler.generate_user_dialogue()
+                
+                if dialogue_options and len(dialogue_options) > 0:
+                    logger.info(f"生成对话选项: {dialogue_options}")
+                    return jsonify({
+                        'success': True,
+                        'options': dialogue_options,
+                        'round': round_num
+                    })
+                else:
+                    logger.warning("未能生成有效的对话选项")
+                    return jsonify({
+                        'success': False,
+                        'error': '无法生成对话选项'
+                    }), 500
+                
+            except Exception as e:
+                logger.error(f"获取对话选项失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'获取对话选项失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/select-dialogue', methods=['POST'])
+        def select_dialogue():
+            """选择对话选项"""
+            try:
+                if not self.script_system or not self.script_system.is_initialized:
+                    return jsonify({
+                        'success': False,
+                        'error': '请先创建剧本设定'
+                    }), 400
+                
+                data = request.get_json()
+                selected_text = data.get('selected_text', '').strip()
+                round_num = data.get('round', 1)
+                
+                if not selected_text:
+                    return jsonify({
+                        'success': False,
+                        'error': '选择的对话内容不能为空'
+                    }), 400
+                
+                logger.info(f"用户选择对话 (第{round_num}轮): {selected_text}")
+                
+                # 从选择的台词中提取角色信息
+                import re
+                character_match = re.match(r'^\[([^\]]+)\]\s*(.+)', selected_text)
+                
+                if character_match:
+                    character_name = character_match.group(1)
+                    dialogue_content = character_match.group(2)
+                    
+                    # 如果是历史人物角色，设置用户当前扮演的角色
+                    if character_name != "用户" and character_name != "我":
+                        success = self.script_system.scheduler.set_user_character(character_name)
+                        if success:
+                            logger.info(f"✅ 用户角色已设置为: {character_name}")
+                        else:
+                            logger.warning(f"⚠️ 设置用户角色失败: {character_name}")
+                    
+                    # 将选择的对话作为用户发言处理，使用实际台词内容
+                    user_response = f"我：{dialogue_content}"
+                    formatted_message = user_response
+                    display_character = character_name
+                else:
+                    # 如果没有角色标记，直接使用原文本
+                    dialogue_content = selected_text
+                    user_response = f"我：{selected_text}"
+                    formatted_message = user_response
+                    display_character = "我"
+                
                 self.script_system.scheduler.add_to_history(user_response)
                 self.script_system.last_speaker = "我"
                 self.script_system.conversation_count += 1
                 
-                return jsonify({
+                response_data = {
                     'success': True,
-                    'recognized_text': recognized_text,
-                    'formatted_message': user_response,
+                    'selected_text': selected_text,
+                    'dialogue_content': dialogue_content,
+                    'character_name': display_character,
+                    'formatted_message': formatted_message,
                     'round': round_num
-                })
+                }
                 
-            except ImportError as e:
-                logger.error(f"语音识别模块导入失败: {e}")
-                return jsonify({
-                    'success': False,
-                    'error': '语音识别功能不可用'
-                }), 500
+                return jsonify(response_data)
+                
             except Exception as e:
-                logger.error(f"语音识别失败: {e}")
+                logger.error(f"选择对话失败: {e}")
                 return jsonify({
                     'success': False,
-                    'error': f'语音识别失败: {str(e)}'
+                    'error': f'选择对话失败: {str(e)}'
                 }), 500
         
         @self.app.route('/api/next-speaker', methods=['POST'])
@@ -468,8 +635,11 @@ class ElectronBridge:
                         'error': f'找不到角色 {speaker} 的智能体'
                     }), 500
                 
+                # 获取用户角色信息
+                user_character_context = self.script_system.scheduler.get_user_character_context()
+                
                 # 生成AI回应
-                ai_response = character_agent.generate_response(situation)
+                ai_response = character_agent.generate_response(situation, user_character_context)
                 
                 # 添加AI回应到历史记录
                 self.script_system.scheduler.add_to_history(ai_response)

@@ -156,10 +156,18 @@
               </div>
               <div class="input-actions">
                 <div class="input-tips">
-                  <span class="tip-text">Ctrl + Enter 快速发送</span>
+                  <span class="tip-text">Ctrl + Enter 快速发送 | 🎤 语音录音 | 📋 智能推荐台词</span>
                   <span class="round-info">第 {{ currentRound }} 轮对话</span>
                 </div>
                 <div class="action-buttons">
+                  <el-button 
+                    type="info" 
+                    @click="showDialogueOptions"
+                    :disabled="!isScriptReady || isSending"
+                  >
+                    <el-icon><List /></el-icon>
+                    选择台词
+                  </el-button>
                   <el-button 
                     type="default" 
                     @click="skipTurn"
@@ -168,13 +176,12 @@
                     {{ isSending ? '调度中...' : '跳过发言' }}
                   </el-button>
                   <el-button 
-                    type="warning" 
-                    @click="voiceInput"
-                    :loading="isRecording"
-                    :disabled="!isScriptReady || isSending || isRecording"
+                    :type="isRecording ? 'danger' : 'warning'"
+                    @click="toggleVoiceRecording"
+                    :disabled="!isScriptReady || isSending"
                   >
                     <el-icon><Microphone /></el-icon>
-                    {{ isRecording ? '录音中...' : '语音输入' }}
+                    {{ isRecording ? '停止录音' : '开始录音' }}
                   </el-button>
                   <el-button 
                     type="primary" 
@@ -275,6 +282,43 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 台词选择对话框 -->
+    <el-dialog v-model="dialogueOptionsVisible" title="选择台词" width="500px" center>
+      <div v-if="loadingOptions" class="loading-options">
+        <el-icon class="loading-icon"><Loading /></el-icon>
+        <p>正在生成台词选项...</p>
+      </div>
+      <div v-else-if="dialogueOptions.length > 0" class="dialogue-options">
+        <p class="options-tip">💡 根据当前剧情为您推荐以下台词：</p>
+        <div 
+          v-for="(option, index) in dialogueOptions" 
+          :key="index"
+          class="option-item"
+          @click="selectOption(option)"
+        >
+          <div class="option-content">
+            <div class="option-icon">{{ getOptionIcon(option, index) }}</div>
+            <div class="option-text">{{ getOptionText(option) }}</div>
+            <div class="option-type">{{ getOptionType(option, index) }}</div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="no-options">
+        <el-empty description="暂无推荐台词" :image-size="60">
+          <el-button type="primary" @click="dialogueOptionsVisible = false">关闭</el-button>
+        </el-empty>
+      </div>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="dialogueOptionsVisible = false">取消</el-button>
+          <el-button type="info" @click="refreshOptions" :loading="loadingOptions">
+            <el-icon><Refresh /></el-icon>
+            重新生成
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -306,6 +350,9 @@ export default {
     const shouldUserSpeak = ref(true) // 判断是否该用户发言
     const scriptEnded = ref(false) // 标记剧本是否已结束
     const speakerDisplayTimer = ref(null) // 发言人提示显示计时器
+    const dialogueOptionsVisible = ref(false) // 台词选择对话框显示状态
+    const dialogueOptions = ref([]) // 台词选项列表
+    const loadingOptions = ref(false) // 加载台词选项状态
 
     const autoForm = ref({
       rounds: 5
@@ -615,24 +662,119 @@ export default {
       await skipTurn()
     }
 
-    // 语音输入
-    const voiceInput = async () => {
-      if (!isScriptReady.value || isSending.value || isRecording.value) {
+    // 切换语音录音状态
+    const toggleVoiceRecording = async () => {
+      if (!isScriptReady.value || isSending.value) {
         return
       }
 
       try {
-        isRecording.value = true
-        ElMessage.info('正在录音，请说话...')
+        if (!isRecording.value) {
+          // 开始录音
+          const startResult = await apiService.startVoiceRecording()
+          if (startResult.success) {
+            isRecording.value = true
+            ElMessage.info('录音已开始，请说话...')
+            console.log('开始录音成功')
+          } else {
+            ElMessage.error(startResult.error || '开始录音失败')
+          }
+        } else {
+          // 停止录音并识别
+          const stopResult = await apiService.stopVoiceRecording(currentRound.value)
+          if (stopResult.success) {
+            ElMessage.success(`语音识别成功：${stopResult.recognized_text}`)
+            
+            // 将识别结果添加到聊天历史
+            chatHistory.value.push(stopResult.formatted_message)
+            await scrollToBottom()
+
+            // 清除之前的定时器
+            if (speakerDisplayTimer.value) {
+              clearTimeout(speakerDisplayTimer.value)
+              speakerDisplayTimer.value = null
+            }
+            
+            // 立即查询下一个发言人并显示提示
+            try {
+              const nextSpeakerResult = await apiService.getNextSpeaker(currentRound.value)
+              if (nextSpeakerResult.success && nextSpeakerResult.next_speaker) {
+                nextSpeaker.value = nextSpeakerResult.next_speaker
+                console.log('语音输入后预显示下一个发言人:', nextSpeakerResult.next_speaker)
+              }
+            } catch (error) {
+              console.error('查询下一个发言人失败:', error)
+            }
+
+            // 短暂延迟后获取AI回应
+            setTimeout(async () => {
+              await getAIResponse()
+            }, 1000)
+          } else {
+            ElMessage.error(stopResult.error || '语音识别失败')
+          }
+          isRecording.value = false
+        }
+      } catch (error) {
+        ElMessage.error(error.message || '语音操作失败')
+        console.error('语音操作失败:', error)
+        isRecording.value = false
+      }
+    }
+
+    // 显示台词选择对话框
+    const showDialogueOptions = async () => {
+      if (!isScriptReady.value || isSending.value) {
+        return
+      }
+
+      try {
+        dialogueOptionsVisible.value = true
+        loadingOptions.value = true
+        dialogueOptions.value = []
+
+        // 获取台词选项
+        const result = await apiService.getDialogueOptions(currentRound.value)
         
-        // 调用后端语音识别接口
-        const voiceResult = await apiService.voiceInput(5, currentRound.value) // 录音5秒
+        if (result.success && result.options && result.options.length > 0) {
+          dialogueOptions.value = result.options
+          console.log('获取台词选项成功:', result.options)
+        } else {
+          ElMessage.warning('未能获取到台词推荐，请重试')
+          dialogueOptionsVisible.value = false
+        }
+      } catch (error) {
+        ElMessage.error(error.message || '获取台词选项失败')
+        console.error('获取台词选项失败:', error)
+        dialogueOptionsVisible.value = false
+      } finally {
+        loadingOptions.value = false
+      }
+    }
+
+    // 选择台词选项
+    const selectOption = async (selectedText) => {
+      if (!selectedText || isSending.value) {
+        return
+      }
+
+      try {
+        dialogueOptionsVisible.value = false
+        isSending.value = true
+
+        // 发送选择的台词
+        const result = await apiService.selectDialogue(selectedText, currentRound.value)
         
-        if (voiceResult.success) {
-          ElMessage.success(`语音识别成功：${voiceResult.recognized_text}`)
+        if (result.success) {
+          // 显示更详细的选择信息
+          if (result.character_name && result.character_name !== "我" && result.character_name !== "用户") {
+            ElMessage.success(`🎭 已扮演 ${result.character_name}：${result.dialogue_content}`)
+          } else {
+            ElMessage.success(`已选择：${result.dialogue_content}`)
+          }
           
-          // 将识别结果添加到聊天历史
-          chatHistory.value.push(voiceResult.formatted_message)
+          // 将选择的台词添加到聊天历史
+          chatHistory.value.push(result.formatted_message)
           await scrollToBottom()
 
           // 清除之前的定时器
@@ -646,7 +788,7 @@ export default {
             const nextSpeakerResult = await apiService.getNextSpeaker(currentRound.value)
             if (nextSpeakerResult.success && nextSpeakerResult.next_speaker) {
               nextSpeaker.value = nextSpeakerResult.next_speaker
-              console.log('语音输入后预显示下一个发言人:', nextSpeakerResult.next_speaker)
+              console.log('选择台词后预显示下一个发言人:', nextSpeakerResult.next_speaker)
             }
           } catch (error) {
             console.error('查询下一个发言人失败:', error)
@@ -657,13 +799,41 @@ export default {
             await getAIResponse()
           }, 1000)
         } else {
-          ElMessage.error(voiceResult.error || '语音识别失败')
+          ElMessage.error(result.error || '选择台词失败')
         }
       } catch (error) {
-        ElMessage.error(error.message || '语音识别失败')
-        console.error('语音识别失败:', error)
+        ElMessage.error(error.message || '选择台词失败')
+        console.error('选择台词失败:', error)
       } finally {
-        isRecording.value = false
+        isSending.value = false
+      }
+    }
+
+    // 重新生成台词选项
+    const refreshOptions = async () => {
+      if (loadingOptions.value) {
+        return
+      }
+
+      try {
+        loadingOptions.value = true
+        dialogueOptions.value = []
+
+        // 重新获取台词选项
+        const result = await apiService.getDialogueOptions(currentRound.value)
+        
+        if (result.success && result.options && result.options.length > 0) {
+          dialogueOptions.value = result.options
+          ElMessage.success('台词选项已更新')
+          console.log('重新生成台词选项成功:', result.options)
+        } else {
+          ElMessage.warning('未能生成新的台词推荐')
+        }
+      } catch (error) {
+        ElMessage.error(error.message || '重新生成台词选项失败')
+        console.error('重新生成台词选项失败:', error)
+      } finally {
+        loadingOptions.value = false
       }
     }
 
@@ -807,11 +977,22 @@ export default {
       }
     })
 
-    onUnmounted(() => {
+    onUnmounted(async () => {
       // 清理定时器
       if (speakerDisplayTimer.value) {
         clearTimeout(speakerDisplayTimer.value)
         speakerDisplayTimer.value = null
+      }
+      
+      // 如果正在录音，停止录音
+      if (isRecording.value) {
+        try {
+          await apiService.stopVoiceRecording(currentRound.value)
+          isRecording.value = false
+          console.log('组件卸载时停止录音')
+        } catch (error) {
+          console.error('组件卸载时停止录音失败:', error)
+        }
       }
     })
 
@@ -831,6 +1012,9 @@ export default {
       scriptEnded,
       autoDialogVisible,
       autoForm,
+      dialogueOptionsVisible,
+      dialogueOptions,
+      loadingOptions,
       loadHistory,
       isUserMessage,
       isSystemMessage,
@@ -840,7 +1024,10 @@ export default {
       formatTime,
       sendMessage,
       skipTurn,
-      voiceInput,
+      toggleVoiceRecording,
+      showDialogueOptions,
+      selectOption,
+      refreshOptions,
       getNextSpeaker,
       clearChat,
       autoConversation,
@@ -1055,6 +1242,42 @@ export default {
   border-color: #ef4444;
 }
 
+.action-buttons .el-button--danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-color: #ef4444;
+  color: white;
+  transition: all 0.3s ease;
+  animation: recording-pulse 1.5s infinite;
+}
+
+.action-buttons .el-button--danger:hover {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  border-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+.action-buttons .el-button--info {
+  background: linear-gradient(135deg, #909399, #73767a);
+  border-color: #909399;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.action-buttons .el-button--info:hover {
+  background: linear-gradient(135deg, #73767a, #606266);
+  border-color: #73767a;
+  transform: translateY(-1px);
+}
+
+@keyframes recording-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
+  }
+}
+
 .info-panel {
   height: calc(100vh - 140px);
   overflow-y: auto;
@@ -1266,6 +1489,98 @@ export default {
   height: 100%;
   min-height: 400px;
   padding: 40px 20px;
+}
+
+/* 台词选择对话框样式 */
+.loading-options {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.loading-options .loading-icon {
+  font-size: 24px;
+  color: #409EFF;
+  margin-bottom: 10px;
+  animation: rotate 2s linear infinite;
+}
+
+.dialogue-options {
+  padding: 20px 0;
+}
+
+.options-tip {
+  text-align: center;
+  margin-bottom: 20px;
+  color: #606266;
+  font-size: 14px;
+}
+
+.option-item {
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.option-item:hover {
+  transform: translateY(-2px);
+}
+
+.option-content {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border: 2px solid #e4e7ed;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8f9fa, #ffffff);
+  transition: all 0.3s ease;
+}
+
+.option-item:hover .option-content {
+  border-color: #409EFF;
+  background: linear-gradient(135deg, #ecf5ff, #ffffff);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.1);
+}
+
+.option-icon {
+  font-size: 24px;
+  margin-right: 12px;
+  min-width: 32px;
+}
+
+.option-text {
+  flex: 1;
+  font-size: 15px;
+  color: #303133;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+.option-type {
+  font-size: 12px;
+  color: #909399;
+  background: rgba(144, 147, 153, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.option-item:nth-child(2) .option-content {
+  background: linear-gradient(135deg, #fff7e6, #ffffff);
+}
+
+.option-item:nth-child(2):hover .option-content {
+  border-color: #E6A23C;
+  background: linear-gradient(135deg, #fdf6ec, #ffffff);
+  box-shadow: 0 4px 12px rgba(230, 162, 60, 0.1);
+}
+
+.option-item:nth-child(2) .option-type {
+  background: rgba(230, 162, 60, 0.1);
+  color: #E6A23C;
+}
+
+.no-options {
+  padding: 20px;
 }
 
 .script-ended-notice .el-result {
