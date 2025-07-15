@@ -1,7 +1,7 @@
 {
   "name": "zgca-vue-frontend",
   "version": "1.0.0",
-  "description": "ZGCA多智能体剧本编辑系统前端",
+  "description": "浮生：多Agent驱动的沉浸式文化互动剧场前端",
   "main": "index.js",
   "type": "module",
   "scripts": {

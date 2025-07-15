@@ -6,7 +6,7 @@
         <div class="header-content">
           <div class="logo">
             <el-icon><DataLine /></el-icon>
-            <span class="title">ZGCA多智能体剧本编辑系统</span>
+            <span class="title">浮生：多Agent驱动的沉浸式文化互动剧场</span>
           </div>
           <el-menu
             mode="horizontal"
