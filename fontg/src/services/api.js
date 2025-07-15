@@ -209,6 +209,41 @@ class ApiService {
       throw new Error(`选择对话失败: ${error.response?.data?.error || error.message}`)
     }
   }
+
+  // 生成场景图片
+  async generateSceneImage() {
+    try {
+      const response = await api.post('/generate-scene-image')
+      return response.data
+    } catch (error) {
+      throw new Error(`生成场景图片失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
+
+  // 获取场景图片URL
+  getSceneImageUrl() {
+    return `${api.defaults.baseURL}/get-scene-image?t=${Date.now()}`
+  }
+
+  // 获取用户当前扮演的角色
+  async getUserCharacter() {
+    try {
+      const response = await api.get('/get-user-character')
+      return response.data
+    } catch (error) {
+      throw new Error(`获取用户角色失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
+
+  // 重置用户角色
+  async resetUserCharacter() {
+    try {
+      const response = await api.post('/reset-user-character')
+      return response.data
+    } catch (error) {
+      throw new Error(`重置用户角色失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
 }
 
 export default new ApiService() 

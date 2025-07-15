@@ -143,6 +143,10 @@ class SchedulerAgent:
             if len(characters_info) == 0:
                 return False
             
+            # 保存用户之前选择的角色信息
+            previous_user_character = self.user_current_character
+            previous_user_character_info = self.user_character_info
+            
             # 分离用户主角和AI角色
             user_character = None
             ai_characters = []
@@ -157,6 +161,24 @@ class SchedulerAgent:
             if not user_character:
                 print("❌ 未找到用户主角信息")
                 return False
+            
+            # 处理用户角色信息
+            user_name = user_character["name"]
+            user_info = user_character["info"]
+            
+            # 如果用户角色名包含括号（如"我（黄盖）"），提取角色信息
+            import re
+            character_match = re.match(r'我（([^）]+)）', user_name)
+            if character_match:
+                # 提取到具体角色名（如"黄盖"）
+                extracted_character = character_match.group(1)
+                self.user_current_character = extracted_character
+                self.user_character_info = user_info
+                print(f"🎭 从剧本设定中识别用户角色: {extracted_character}")
+            else:
+                # 没有具体角色信息，保持原有的用户角色状态
+                if not self.user_current_character:
+                    print("💡 用户角色为通用主角，可后续选择具体角色")
             
             # 记录用户主角信息（不需要创建AI智能体）
             self.characters[USER_CHARACTER_NAME] = "user_character"
@@ -176,6 +198,31 @@ class SchedulerAgent:
                     character_agent.set_scene_info(self.scene_setting, self.plot_summary)
                     
                     self.characters[character_name] = character_agent
+            
+            # 检查用户之前选择的角色是否在新剧本中存在
+            # 注意：如果剧本设定中已经明确指定了用户角色（如"我（黄盖）"），优先使用剧本设定
+            if not character_match and previous_user_character:
+                # 只有在剧本设定中没有指定具体角色时，才检查之前的选择
+                character_exists = any(char_info["name"] == previous_user_character 
+                                     for char_info in ai_characters)
+                
+                if character_exists:
+                    # 角色存在，保留用户选择
+                    self.user_current_character = previous_user_character
+                    # 更新角色信息为新剧本中的信息
+                    for char_info in ai_characters:
+                        if char_info["name"] == previous_user_character:
+                            self.user_character_info = char_info["info"]
+                            break
+                    print(f"🎭 保留用户角色选择: {previous_user_character}")
+                else:
+                    # 角色不存在，清除用户选择
+                    self.user_current_character = None
+                    self.user_character_info = None
+                    print(f"⚠️ 用户之前选择的角色 '{previous_user_character}' 在新剧本中不存在，已清除选择")
+            elif character_match:
+                # 剧本设定中明确指定了用户角色，使用剧本设定中的信息
+                print(f"🎭 使用剧本设定中的角色信息，覆盖之前的选择")
             
             print(f"✅ 创建完成：用户主角 + {ai_character_count} 个AI角色")
             return True
@@ -370,11 +417,20 @@ class SchedulerAgent:
         """
         characters_info = []
         for name, character in self.characters.items():
-            if name == USER_CHARACTER_NAME:
+            if USER_CHARACTER_NAME in name:
                 # 用户主角的信息
+                if self.user_current_character and self.user_character_info:
+                    # 如果用户已选择角色，显示角色信息
+                    display_name = f"我（{self.user_current_character}）"
+                    character_info_text = self.user_character_info
+                else:
+                    # 如果用户未选择角色，显示默认信息
+                    display_name = "我"
+                    character_info_text = "用户扮演的主角"
+                
                 characters_info.append({
-                    "name": USER_CHARACTER_NAME,
-                    "info": "用户扮演的主角",
+                    "name": display_name,
+                    "info": character_info_text,
                     "type": "user"
                 })
             else:
@@ -404,22 +460,32 @@ class SchedulerAgent:
             包含历史人物角色信息的对话建议列表，格式："[角色名] 台词内容"
         """
         try:
-            # 获取可用的历史人物角色（排除用户角色"我"）
-            available_characters = []
-            for char_name, char_agent in self.characters.items():
-                if char_name != USER_CHARACTER_NAME:
-                    available_characters.append({
-                        'name': char_name,
-                        'info': char_agent.character_info
-                    })
+            # 检查用户是否已经选择角色
+            if self.user_current_character and self.user_current_character in self.characters:
+                # 用户已选择角色，只为该角色生成多个台词选项
+                selected_characters = [{
+                    'name': self.user_current_character,
+                    'info': self.user_character_info
+                }]
+                print(f"🎭 为用户当前角色 {self.user_current_character} 生成台词选项")
+            else:
+                # 用户未选择角色，从可用角色中随机选择
+                available_characters = []
+                for char_name, char_agent in self.characters.items():
+                    if char_name != USER_CHARACTER_NAME:
+                        available_characters.append({
+                            'name': char_name,
+                            'info': char_agent.character_info
+                        })
 
-            # 如果没有可用角色，返回默认选项
-            if not available_characters:
-                return ["[用户] 我认为我们应该推进这个方案", "[用户] 这个方案是不是风险太大了？"]
+                # 如果没有可用角色，返回默认选项
+                if not available_characters:
+                    return ["[用户] 我认为我们应该推进这个方案", "[用户] 这个方案是不是风险太大了？"]
 
-            # 选择2个不同的历史人物角色
-            import random
-            selected_characters = random.sample(available_characters, min(2, len(available_characters)))
+                # 选择2个不同的历史人物角色
+                import random
+                selected_characters = random.sample(available_characters, min(2, len(available_characters)))
+                print(f"🎲 随机选择角色生成台词: {[char['name'] for char in selected_characters]}")
             
             # 构建对话上下文
             context = "\n".join([
@@ -431,9 +497,85 @@ class SchedulerAgent:
 
             dialogues = []
             
-            for character in selected_characters:
-                # 为每个角色生成台词
-                prompt = f"""
+            if self.user_current_character:
+                # 如果用户已选择角色，生成该角色的2种不同风格台词
+                character = selected_characters[0]
+                
+                # 生成积极风格台词
+                prompt_positive = f"""
+            你是一个专业的剧本创作助手，现在需要为历史人物{character['name']}生成台词。
+
+            角色信息：{character['info']}
+
+            当前上下文：
+            {context}
+
+            请以{character['name']}的身份和性格特点，生成一句积极进取、推进剧情的台词。
+            要求：
+            1. 台词长度不超过20个字
+            2. 体现{character['name']}的性格特征
+            3. 符合当前剧情发展
+            4. 采用积极、主动的语调
+            5. 只返回台词内容，不要添加其他说明
+
+            台词：
+            """
+                
+                response_positive = self.client.chat.completions.create(
+                    model=DEEPSEEK_MODEL,
+                    messages=[
+                        {"role": "system", "content": f"你擅长模拟历史人物{character['name']}的语言风格和性格特点"},
+                        {"role": "user", "content": prompt_positive}
+                    ],
+                    temperature=0.8,
+                    max_tokens=max_tokens,
+                    stream=False
+                )
+
+                dialogue_positive = response_positive.choices[0].message.content.strip().strip('"\'').strip()
+                formatted_positive = f"[{character['name']}] {dialogue_positive}"
+                dialogues.append(formatted_positive)
+                
+                # 生成谨慎风格台词
+                prompt_cautious = f"""
+你是一个专业的剧本创作助手，现在需要为历史人物{character['name']}生成台词。
+
+角色信息：{character['info']}
+
+当前上下文：
+{context}
+
+请以{character['name']}的身份和性格特点，生成一句谨慎思考、质疑分析的台词。
+要求：
+1. 台词长度不超过20个字
+2. 体现{character['name']}的性格特征
+3. 符合当前剧情发展
+4. 采用谨慎、思考的语调
+5. 只返回台词内容，不要添加其他说明
+
+台词：
+"""
+                
+                response_cautious = self.client.chat.completions.create(
+                    model=DEEPSEEK_MODEL,
+                    messages=[
+                        {"role": "system", "content": f"你擅长模拟历史人物{character['name']}的语言风格和性格特点"},
+                        {"role": "user", "content": prompt_cautious}
+                    ],
+                    temperature=0.8,
+                    max_tokens=max_tokens,
+                    stream=False
+                )
+
+                dialogue_cautious = response_cautious.choices[0].message.content.strip().strip('"\'').strip()
+                formatted_cautious = f"[{character['name']}] {dialogue_cautious}"
+                dialogues.append(formatted_cautious)
+                
+            else:
+                # 如果用户未选择角色，为不同角色各生成一句台词
+                for character in selected_characters:
+                    # 为每个角色生成台词
+                    prompt = f"""
 你是一个专业的剧本创作助手，现在需要为历史人物{character['name']}生成台词。
 
 角色信息：{character['info']}
@@ -450,25 +592,25 @@ class SchedulerAgent:
 
 台词：
 """
-                
-                response = self.client.chat.completions.create(
-                    model=DEEPSEEK_MODEL,
-                    messages=[
-                        {"role": "system", "content": f"你擅长模拟历史人物{character['name']}的语言风格和性格特点"},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.8,
-                    max_tokens=max_tokens,
-                    stream=False
-                )
+                    
+                    response = self.client.chat.completions.create(
+                        model=DEEPSEEK_MODEL,
+                        messages=[
+                            {"role": "system", "content": f"你擅长模拟历史人物{character['name']}的语言风格和性格特点"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.8,
+                        max_tokens=max_tokens,
+                        stream=False
+                    )
 
-                dialogue = response.choices[0].message.content.strip()
-                # 去掉可能的引号和多余字符
-                dialogue = dialogue.strip('"\'').strip()
-                
-                # 格式化为 "[角色名] 台词内容"
-                formatted_dialogue = f"[{character['name']}] {dialogue}"
-                dialogues.append(formatted_dialogue)
+                    dialogue = response.choices[0].message.content.strip()
+                    # 去掉可能的引号和多余字符
+                    dialogue = dialogue.strip('"\'').strip()
+                    
+                    # 格式化为 "[角色名] 台词内容"
+                    formatted_dialogue = f"[{character['name']}] {dialogue}"
+                    dialogues.append(formatted_dialogue)
 
             return dialogues if len(dialogues) >= 2 else dialogues + ["[用户] 我们继续推进剧情吧"]
 

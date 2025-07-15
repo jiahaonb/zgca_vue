@@ -1,9 +1,9 @@
 <template>
   <div class="chat-interface">
     <el-row :gutter="20">
-      <!-- 对话区域 -->
+      <!-- 场景图片对话区域 -->
       <el-col :span="18">
-                <el-card class="chat-card" shadow="hover">
+        <el-card class="scene-card" shadow="hover">
           <template #header>
             <div class="chat-header">
               <div class="header-info">
@@ -13,6 +13,10 @@
                 <el-tag v-else type="warning" size="small">请先创建剧本</el-tag>
               </div>
               <div class="header-actions">
+                <el-button size="small" @click="generateSceneImage" :loading="generatingImage">
+                  <el-icon><Picture /></el-icon>
+                  生成场景图片
+                </el-button>
                 <el-button size="small" @click="loadHistory">
                   <el-icon><Refresh /></el-icon>
                   刷新
@@ -29,168 +33,123 @@
             </div>
           </template>
 
-          <div class="chat-container">
-            <!-- 对话历史区域 -->
-            <div class="chat-history" ref="chatHistoryRef">
-              <!-- 剧本结束状态显示 -->
-              <div v-if="scriptEnded && chatHistory.length === 0" class="script-ended-notice">
-                <el-result icon="success" title="剧本已结束" sub-title="您可以创建新的剧本开始全新的故事">
-                  <template #extra>
-                    <el-button type="primary" @click="goToScript">
-                      <el-icon><Edit /></el-icon>
-                      创建新剧本
-                    </el-button>
-                  </template>
-                </el-result>
+          <!-- 场景图片容器 -->
+          <div class="scene-container">
+            <!-- 背景图片 -->
+            <div 
+              v-if="sceneImageUrl" 
+              class="scene-background"
+              :style="{ backgroundImage: `url(${sceneImageUrl})` }"
+            >
+              <!-- 透明对话显示容器 -->
+              <div 
+                v-show="showDialogueOverlay && currentDialogue"
+                class="dialogue-overlay"
+                :class="{ 'fade-in': showDialogueOverlay }"
+              >
+                <div class="dialogue-content">
+                  <div class="speaker-info">
+                    <el-avatar :size="40">{{ currentSpeakerAvatar }}</el-avatar>
+                    <span class="speaker-name">{{ currentSpeakerName }}</span>
+                  </div>
+                  <div class="dialogue-text">{{ currentDialogue }}</div>
+                </div>
               </div>
 
               <!-- 空状态显示 -->
-              <div v-else-if="chatHistory.length === 0" class="empty-chat">
-                <el-empty description="还没有对话记录">
-                  <el-button v-if="!isScriptReady" type="primary" @click="goToScript">
+              <div v-if="!isScriptReady" class="scene-empty-state">
+                <el-empty description="请先创建剧本开始对话">
+                  <el-button type="primary" @click="goToScript">
+                    <el-icon><Edit /></el-icon>
                     创建剧本
-                  </el-button>
-                  <el-button v-else type="primary" @click="startChat">
-                    开始对话
                   </el-button>
                 </el-empty>
               </div>
-              
-              <div v-else class="messages-container">
-                <!-- 对话开始提示 -->
-                <div class="status-tip">
-                  <span>🎭 对话已开始，第 {{ currentRound }} 轮</span>
-                </div>
 
-                <div 
-                  v-for="(message, index) in chatHistory" 
-                  :key="index"
-                >
-                  <!-- 系统消息显示为状态提示 -->
-                  <div v-if="isSystemMessage(message)" class="status-tip system-message">
-                    <span>🔄 {{ getMessageText(message) }}</span>
-                  </div>
-                  
-                  <!-- 普通消息 -->
-                  <div v-else>
-                    <div 
-                      class="message-item"
-                      :class="{ 'user-message': isUserMessage(message), 'ai-message': !isUserMessage(message) }"
-                    >
-                      <div class="message-avatar">
-                        <el-avatar :size="40">
-                          {{ getMessageAvatar(message) }}
-                        </el-avatar>
-                      </div>
-                      <div class="message-content">
-                        <div class="message-header">
-                          <span class="speaker-name">{{ getSpeakerName(message) }}</span>
-                          <span class="message-time">{{ formatTime(new Date()) }}</span>
-                        </div>
-                        <div class="message-text">{{ getMessageText(message) }}</div>
-                      </div>
-                    </div>
-
-                  </div>
-                </div>
-
-                <!-- 打字指示器 -->
-                <div v-if="isTyping" class="typing-indicator">
-                  <div class="typing-avatar">
-                    <el-avatar :size="40">🤖</el-avatar>
-                  </div>
-                  <div class="typing-content">
-                    <div class="typing-text">
-                      <span>{{ typingSpeaker || 'AI' }}</span> 正在思考中
-                      <span class="typing-dots">
-                        <span>.</span><span>.</span><span>.</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 发送状态提示 -->
-                <div v-if="isSending" class="status-tip">
-                  <span>📤 正在发送消息...</span>
-                </div>
-
-                <!-- 下一个发言人提示 -->
-                <div v-if="nextSpeaker && !isTyping && !isSending" class="status-tip next-speaker">
-                  <span>🎯 下一个发言人：{{ nextSpeaker }}</span>
-                </div>
-
-                <!-- 下一步提示 -->
-                <div v-else-if="chatHistory.length > 0 && !isTyping" class="status-tip next-action">
-                  <span v-if="shouldUserSpeak && currentMessage.trim()">
-                    ✍️ 继续输入或点击发送按钮
-                  </span>
-                  <span v-else-if="shouldUserSpeak">
-                    💭 您是否需要在此处发言？如果需要，请在下方输入台词
-                  </span>
-                  <span v-else>
-                    🔄 请点击"调度下一个角色"或继续对话
-                  </span>
-                </div>
-
-                <!-- 系统状态提示 -->
-                <div v-if="!isScriptReady" class="status-tip warning">
-                  <span>⚠️ 请先创建剧本才能开始对话</span>
-                </div>
+              <!-- 剧本结束状态 -->
+              <div v-else-if="scriptEnded" class="scene-empty-state">
+                <el-empty description="剧本已结束">
+                  <el-button type="primary" @click="goToScript">
+                    <el-icon><Edit /></el-icon>
+                    创建新剧本
+                  </el-button>
+                </el-empty>
               </div>
             </div>
 
+            <!-- 无图片时的占位 -->
+            <div v-else class="scene-placeholder">
+              <el-empty description="暂无场景图片" :image-size="200">
+                <el-button 
+                  v-if="isScriptReady" 
+                  type="primary" 
+                  @click="generateSceneImage"
+                  :loading="generatingImage"
+                >
+                  <el-icon><Picture /></el-icon>
+                  生成场景图片
+                </el-button>
+                <el-button v-else type="primary" @click="goToScript">
+                  <el-icon><Edit /></el-icon>
+                  创建剧本
+                </el-button>
+              </el-empty>
+                        </div>
+
             <!-- 消息输入区域 -->
-            <div class="message-input">
-              <div class="input-wrapper">
-                <el-input
-                  v-model="currentMessage"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="输入您的台词..."
-                  @keydown.ctrl.enter="sendMessage"
-                  :disabled="!isScriptReady || isSending"
-                  show-word-limit
-                  maxlength="500"
-                  resize="none"
-                />
-              </div>
-              <div class="input-actions">
-                <div class="input-tips">
-                  <span class="tip-text">Ctrl + Enter 快速发送 | 🎤 语音录音 | 📋 智能推荐台词</span>
-                  <span class="round-info">第 {{ currentRound }} 轮对话</span>
+            <div class="message-input-container">
+              <div class="message-input">
+                <div class="input-wrapper">
+                  <el-input
+                    v-model="currentMessage"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="输入您的台词..."
+                    @keydown.ctrl.enter="sendMessage"
+                    :disabled="!isScriptReady || isSending"
+                    show-word-limit
+                    maxlength="500"
+                    resize="none"
+                  />
                 </div>
-                <div class="action-buttons">
-                  <el-button 
-                    type="info" 
-                    @click="showDialogueOptions"
-                    :disabled="!isScriptReady || isSending"
-                  >
-                    <el-icon><List /></el-icon>
-                    选择台词
-                  </el-button>
-                  <el-button 
-                    type="default" 
-                    @click="skipTurn"
-                    :disabled="!isScriptReady || isSending"
-                  >
-                    {{ isSending ? '调度中...' : '跳过发言' }}
-                  </el-button>
-                  <el-button 
-                    :type="isRecording ? 'danger' : 'warning'"
-                    @click="toggleVoiceRecording"
-                    :disabled="!isScriptReady || isSending"
-                  >
-                    <el-icon><Microphone /></el-icon>
-                    {{ isRecording ? '停止录音' : '开始录音' }}
-                  </el-button>
-                  <el-button 
-                    type="primary" 
-                    @click="sendMessage"
-                    :loading="isSending"
-                    :disabled="!isScriptReady || !currentMessage.trim()"
-                  >
-                    {{ isSending ? '发送中...' : '发送' }}
-                  </el-button>
+                <div class="input-actions">
+                  <div class="input-tips">
+                    <span class="tip-text">Ctrl + Enter 快速发送 | 🎤 语音录音 | 📋 智能推荐台词</span>
+                    <span class="round-info">第 {{ currentRound }} 轮对话</span>
+                  </div>
+                  <div class="action-buttons">
+                    <el-button 
+                      type="info" 
+                      @click="showDialogueOptions"
+                      :disabled="!isScriptReady || isSending"
+                    >
+                      <el-icon><List /></el-icon>
+                      选择台词
+                    </el-button>
+                    <el-button 
+                      type="default" 
+                      @click="skipTurn"
+                      :disabled="!isScriptReady || isSending"
+                    >
+                      {{ isSending ? '调度中...' : '跳过发言' }}
+                    </el-button>
+                    <el-button 
+                      :type="isRecording ? 'danger' : 'warning'"
+                      @click="toggleVoiceRecording"
+                      :disabled="!isScriptReady || isSending"
+                    >
+                      <el-icon><Microphone /></el-icon>
+                      {{ isRecording ? '停止录音' : '开始录音' }}
+                    </el-button>
+                    <el-button 
+                      type="primary" 
+                      @click="sendMessage"
+                      :loading="isSending"
+                      :disabled="!isScriptReady || !currentMessage.trim()"
+                    >
+                      {{ isSending ? '发送中...' : '发送' }}
+                    </el-button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -225,8 +184,24 @@
                   {{ character.type === 'user' ? '👤' : '🤖' }}
                 </div>
                 <div class="character-info">
-                  <div class="character-name">{{ character.name }}</div>
+                  <div class="character-name">
+                    <span v-if="character.type === 'user'">
+                      {{ hasUserCharacter ? `我（${userCharacter}）` : '我' }}
+                    </span>
+                    <span v-else>{{ character.name }}</span>
+                  </div>
                   <div class="character-type">{{ character.type === 'user' ? '用户主角' : 'AI角色' }}</div>
+                  <!-- 显示重置角色按钮 -->
+                  <div v-if="character.type === 'user' && hasUserCharacter" class="character-actions">
+                    <el-button 
+                      size="small" 
+                      type="text" 
+                      @click="resetUserCharacter"
+                      title="重置角色，重新选择"
+                    >
+                      🔄 重置
+                    </el-button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -332,6 +307,7 @@ export default {
   name: 'ChatInterface',
   setup() {
     const router = useRouter()
+    const checkConnection = inject('checkConnection')
     const showLoading = inject('showLoading')
     const hideLoading = inject('hideLoading')
 
@@ -353,6 +329,20 @@ export default {
     const dialogueOptionsVisible = ref(false) // 台词选择对话框显示状态
     const dialogueOptions = ref([]) // 台词选项列表
     const loadingOptions = ref(false) // 加载台词选项状态
+    
+    // 用户角色相关
+    const userCharacter = ref(null) // 用户当前扮演的角色
+    const userCharacterInfo = ref(null) // 用户角色的详细信息
+    const hasUserCharacter = ref(false) // 是否已选择角色
+
+    // 场景图片和对话显示相关
+    const sceneImageUrl = ref(null) // 场景图片URL
+    const generatingImage = ref(false) // 是否正在生成图片
+    const showDialogueOverlay = ref(false) // 是否显示对话overlay
+    const currentDialogue = ref('') // 当前显示的对话内容
+    const currentSpeakerName = ref('') // 当前说话人名字
+    const currentSpeakerAvatar = ref('') // 当前说话人头像
+    const dialogueTimer = ref(null) // 对话显示计时器
 
     const autoForm = ref({
       rounds: 5
@@ -363,16 +353,26 @@ export default {
       try {
         const systemInfo = await apiService.getSystemInfo()
         if (systemInfo.success && systemInfo.initialized) {
+          const wasReady = isScriptReady.value
           isScriptReady.value = true
           scriptEnded.value = false // 有剧本时，清除结束状态
           if (systemInfo.characters) {
             characters.value = systemInfo.characters
+          }
+          
+          // 如果剧本状态从未就绪变为就绪，重新加载用户角色信息
+          if (!wasReady) {
+            await loadUserCharacter()
           }
         } else {
           // 如果后端没有初始化的剧本，但前端还没标记为结束，说明是初始状态
           if (!scriptEnded.value) {
             isScriptReady.value = false
             characters.value = []
+            // 清除用户角色信息
+            userCharacter.value = null
+            userCharacterInfo.value = null
+            hasUserCharacter.value = false
           }
         }
       } catch (error) {
@@ -402,6 +402,53 @@ export default {
       } catch (error) {
         console.error('加载历史失败:', error)
         ElMessage.error('加载对话历史失败')
+      }
+    }
+
+    // 获取用户角色信息
+    const loadUserCharacter = async () => {
+      try {
+        const result = await apiService.getUserCharacter()
+        if (result.success) {
+          userCharacter.value = result.user_character
+          userCharacterInfo.value = result.character_info
+          hasUserCharacter.value = result.has_character
+          console.log('用户角色信息:', {
+            character: userCharacter.value,
+            hasCharacter: hasUserCharacter.value
+          })
+        }
+      } catch (error) {
+        console.error('获取用户角色失败:', error)
+        // 不显示错误消息，因为用户可能还没选择角色
+      }
+    }
+
+    // 重置用户角色
+    const resetUserCharacter = async () => {
+      try {
+        const result = await apiService.resetUserCharacter()
+        if (result.success) {
+          userCharacter.value = null
+          userCharacterInfo.value = null
+          hasUserCharacter.value = false
+          ElMessage.success('角色已重置，可以重新选择')
+        }
+      } catch (error) {
+        console.error('重置用户角色失败:', error)
+        ElMessage.error('重置角色失败')
+      }
+    }
+
+    // 刷新全部状态（用于页面激活或路由变化时）
+    const refreshAllStatus = async () => {
+      try {
+        await checkScriptStatus()
+        await loadHistory()
+        await loadUserCharacter()
+        console.log('✅ 全部状态已刷新')
+      } catch (error) {
+        console.error('刷新状态失败:', error)
       }
     }
 
@@ -465,6 +512,11 @@ export default {
         const userResult = await apiService.userSpeak(currentMessage.value, currentRound.value)
         if (userResult.success) {
           chatHistory.value.push(userResult.formatted_message)
+          
+          // 显示用户对话内容
+          const userDisplayName = hasUserCharacter.value ? userCharacter.value : '我'
+          showDialogue(currentMessage.value, userDisplayName, '👤')
+          
           currentMessage.value = ''
           await scrollToBottom()
 
@@ -526,6 +578,11 @@ export default {
           
           if (aiResult.success) {
             chatHistory.value.push(aiResult.message)
+            
+            // 显示AI对话内容
+            const aiMessage = getMessageText(aiResult.message)
+            showDialogue(aiMessage, aiSpeaker, '🤖')
+            
             currentRound.value++
             shouldUserSpeak.value = true // AI发言后，轮到用户
             await scrollToBottom()
@@ -562,6 +619,11 @@ export default {
             
             if (aiResult.success) {
               chatHistory.value.push(aiResult.message)
+              
+              // 显示AI对话内容
+              const aiMessage = getMessageText(aiResult.message)
+              showDialogue(aiMessage, nextSpeakerResult.next_speaker, '🤖')
+              
               currentRound.value++
               shouldUserSpeak.value = true // AI发言后，轮到用户
               await scrollToBottom()
@@ -777,6 +839,11 @@ export default {
           chatHistory.value.push(result.formatted_message)
           await scrollToBottom()
 
+          // 更新用户角色信息（如果选择了角色）
+          if (result.character_name && result.character_name !== "我" && result.character_name !== "用户") {
+            await loadUserCharacter()
+          }
+
           // 清除之前的定时器
           if (speakerDisplayTimer.value) {
             clearTimeout(speakerDisplayTimer.value)
@@ -967,17 +1034,31 @@ export default {
         console.log('所有状态已重置，剧本已完全结束')
     }
 
+    // 页面可见性变化处理函数
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log('页面变为可见，刷新状态...')
+        refreshAllStatus()
+      }
+    }
+
     onMounted(async () => {
-      await checkScriptStatus()
-      await loadHistory()
+      // 使用统一的状态刷新方法
+      await refreshAllStatus()
       
       // 如果有剧本但没有对话历史，则提示开始对话
       if (isScriptReady.value && chatHistory.value.length === 0) {
         shouldUserSpeak.value = true
       }
+      
+      // 添加页面可见性变化监听器
+      document.addEventListener('visibilitychange', handleVisibilityChange)
     })
 
     onUnmounted(async () => {
+      // 移除页面可见性监听器
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      
       // 清理定时器
       if (speakerDisplayTimer.value) {
         clearTimeout(speakerDisplayTimer.value)
@@ -995,6 +1076,112 @@ export default {
         }
       }
     })
+
+    // 获取台词选项的图标
+    const getOptionIcon = (option, index) => {
+      const match = option.match(/^\[([^\]]+)\]/)
+      if (match) {
+        const character = match[1]
+        // 根据角色名返回对应图标
+        const iconMap = {
+          '黄盖': '🔥',
+          '周瑜': '🎯', 
+          '孙权': '👑',
+          '诸葛亮': '🎭',
+          '刘备': '⚔️',
+          '关羽': '🗡️',
+          '张飞': '💪',
+          '曹操': '🏴',
+          '用户': '👤'
+        }
+        return iconMap[character] || '🎲'
+      }
+      return index === 0 ? '💪' : '🤔' // 兼容旧格式
+    }
+
+    // 获取台词选项的文本内容
+    const getOptionText = (option) => {
+      const match = option.match(/^\[([^\]]+)\]\s*(.+)/)
+      if (match) {
+        return match[2] // 返回台词内容
+      }
+      return option // 兼容旧格式
+    }
+
+    // 获取台词选项的类型标签
+    const getOptionType = (option, index) => {
+      const match = option.match(/^\[([^\]]+)\]/)
+      if (match) {
+        return match[1] // 返回角色名
+      }
+      return index === 0 ? '积极进取' : '谨慎思考' // 兼容旧格式
+    }
+
+    // 生成场景图片
+    const generateSceneImage = async () => {
+      if (!isScriptReady.value || generatingImage.value) {
+        return
+      }
+
+      try {
+        generatingImage.value = true
+        showLoading('正在生成场景图片，请稍候...')
+        
+        const result = await apiService.generateSceneImage()
+        
+        if (result.success) {
+          // 更新场景图片URL
+          sceneImageUrl.value = apiService.getSceneImageUrl()
+          ElMessage.success('场景图片生成成功！')
+        } else {
+          ElMessage.error(result.error || '场景图片生成失败')
+        }
+      } catch (error) {
+        ElMessage.error(error.message || '场景图片生成失败')
+        console.error('生成场景图片失败:', error)
+      } finally {
+        generatingImage.value = false
+        hideLoading()
+      }
+    }
+
+    // 显示对话内容
+    const showDialogue = (message, speakerName, speakerAvatar) => {
+      // 清除之前的计时器
+      if (dialogueTimer.value) {
+        clearTimeout(dialogueTimer.value)
+        dialogueTimer.value = null
+      }
+
+      // 设置对话内容
+      currentDialogue.value = message
+      currentSpeakerName.value = speakerName
+      currentSpeakerAvatar.value = speakerAvatar
+      
+      // 显示对话overlay
+      showDialogueOverlay.value = true
+
+      // 10秒后隐藏
+      dialogueTimer.value = setTimeout(() => {
+        showDialogueOverlay.value = false
+        currentDialogue.value = ''
+        currentSpeakerName.value = ''
+        currentSpeakerAvatar.value = ''
+        dialogueTimer.value = null
+      }, 10000)
+    }
+
+    // 隐藏对话overlay
+    const hideDialogue = () => {
+      if (dialogueTimer.value) {
+        clearTimeout(dialogueTimer.value)
+        dialogueTimer.value = null
+      }
+      showDialogueOverlay.value = false
+      currentDialogue.value = ''
+      currentSpeakerName.value = ''
+      currentSpeakerAvatar.value = ''
+    }
 
     return {
       chatHistoryRef,
@@ -1015,7 +1202,13 @@ export default {
       dialogueOptionsVisible,
       dialogueOptions,
       loadingOptions,
+      userCharacter,
+      userCharacterInfo,
+      hasUserCharacter,
       loadHistory,
+      loadUserCharacter,
+      resetUserCharacter,
+      refreshAllStatus,
       isUserMessage,
       isSystemMessage,
       getMessageAvatar,
@@ -1034,7 +1227,13 @@ export default {
       startAutoConversation,
       startChat,
       goToScript,
-      endScript
+      endScript,
+      getOptionIcon,
+      getOptionText,
+      getOptionType,
+      generateSceneImage,
+      showDialogue,
+      hideDialogue
     }
   }
 }
@@ -1329,14 +1528,30 @@ export default {
   font-size: 20px;
 }
 
+.character-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .character-name {
   font-weight: bold;
   font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .character-type {
   font-size: 12px;
   color: #909399;
+}
+
+.character-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 .action-list {

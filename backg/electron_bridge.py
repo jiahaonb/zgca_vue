@@ -4,9 +4,10 @@ Electron Bridge - 连接前端与Python后端的API桥梁
 
 import json
 import logging
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from script_system import ScriptSystem
+from word_to_vi import text_to_image
 import threading
 import time
 
@@ -712,6 +713,138 @@ class ElectronBridge:
                 return jsonify({
                     'success': False,
                     'error': str(e)
+                }), 500
+        
+        @self.app.route('/api/get-user-character', methods=['GET'])
+        def get_user_character():
+            """获取用户当前扮演的角色信息"""
+            try:
+                if not self.script_system or not self.script_system.is_initialized:
+                    return jsonify({
+                        'success': False,
+                        'error': '请先创建剧本设定'
+                    }), 400
+                
+                character_name, character_info = self.script_system.scheduler.get_user_character()
+                
+                return jsonify({
+                    'success': True,
+                    'user_character': character_name,
+                    'character_info': character_info,
+                    'has_character': character_name is not None
+                })
+                
+            except Exception as e:
+                logger.error(f"获取用户角色失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'获取用户角色失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/reset-user-character', methods=['POST'])
+        def reset_user_character():
+            """重置用户角色，允许重新选择"""
+            try:
+                if not self.script_system or not self.script_system.is_initialized:
+                    return jsonify({
+                        'success': False,
+                        'error': '请先创建剧本设定'
+                    }), 400
+                
+                self.script_system.scheduler.clear_user_character()
+                logger.info("用户角色已重置")
+                
+                return jsonify({
+                    'success': True,
+                    'message': '角色已重置，可以重新选择'
+                })
+                
+            except Exception as e:
+                logger.error(f"重置用户角色失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'重置用户角色失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/generate-scene-image', methods=['POST'])
+        def generate_scene_image():
+            """根据场景设定生成图片"""
+            try:
+                if not self.script_system or not self.script_system.is_initialized:
+                    return jsonify({
+                        'success': False,
+                        'error': '请先创建剧本设定'
+                    }), 400
+                
+                # 获取场景设定
+                scene_setting = getattr(self.script_system.scheduler, 'scene_setting', '')
+                
+                if not scene_setting:
+                    return jsonify({
+                        'success': False,
+                        'error': '场景设定为空，无法生成图片'
+                    }), 400
+                
+                logger.info(f"开始生成场景图片，场景设定: {scene_setting[:100]}...")
+                
+                # 构建图片生成的prompt
+                prompt = f"古代中国历史场景，{scene_setting}，电影级别画质，史诗级场面，高清细节"
+                
+                # 创建保存目录
+                save_dir = os.path.join(os.path.dirname(__file__), 'scene_images')
+                
+                # 生成图片
+                image_path = text_to_image(prompt, save_dir)
+                
+                if image_path and os.path.exists(image_path):
+                    # 保存图片路径到剧本系统
+                    self.script_system.current_scene_image = image_path
+                    
+                    logger.info(f"场景图片生成成功: {image_path}")
+                    return jsonify({
+                        'success': True,
+                        'image_path': image_path,
+                        'message': '场景图片生成成功'
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': '图片生成失败'
+                    }), 500
+                
+            except Exception as e:
+                logger.error(f"生成场景图片失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'生成场景图片失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/get-scene-image', methods=['GET'])
+        def get_scene_image():
+            """获取当前场景图片"""
+            try:
+                if not self.script_system:
+                    return jsonify({
+                        'success': False,
+                        'error': '剧本系统未初始化'
+                    }), 400
+                
+                # 检查是否有当前场景图片
+                image_path = getattr(self.script_system, 'current_scene_image', None)
+                
+                if image_path and os.path.exists(image_path):
+                    return send_file(image_path, mimetype='image/png')
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': '暂无场景图片'
+                    }), 404
+                
+            except Exception as e:
+                logger.error(f"获取场景图片失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'获取场景图片失败: {str(e)}'
                 }), 500
         
         @self.app.route('/', methods=['GET'])
