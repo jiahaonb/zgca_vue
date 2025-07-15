@@ -1,5 +1,5 @@
 """
-Electron Bridge - 连接Electron前端与Python后端的API桥梁
+Electron Bridge - 连接前端与Python后端的API桥梁
 """
 
 import json
@@ -253,6 +253,61 @@ class ElectronBridge:
                 return jsonify({
                     'success': False,
                     'error': f'清空历史失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/api/voice-input', methods=['POST'])
+        def voice_input():
+            """语音输入识别"""
+            try:
+                from record_voc import record_and_recognize
+                
+                data = request.get_json()
+                duration = data.get('duration', 5)  # 默认录音5秒
+                round_num = data.get('round', 1)
+                
+                if not self.script_system or not self.script_system.is_initialized:
+                    return jsonify({
+                        'success': False,
+                        'error': '请先创建剧本设定'
+                    }), 400
+                
+                logger.info(f"开始语音识别 (第{round_num}轮), 录音时长: {duration}秒")
+                
+                # 调用语音识别
+                recognized_text = record_and_recognize(duration=duration)
+                
+                if not recognized_text or recognized_text in ["识别失败", "解析返回内容失败"]:
+                    return jsonify({
+                        'success': False,
+                        'error': '语音识别失败，请重试'
+                    }), 400
+                
+                logger.info(f"语音识别结果: {recognized_text}")
+                
+                # 直接将识别结果作为用户发言处理
+                user_response = f"我：{recognized_text}"
+                self.script_system.scheduler.add_to_history(user_response)
+                self.script_system.last_speaker = "我"
+                self.script_system.conversation_count += 1
+                
+                return jsonify({
+                    'success': True,
+                    'recognized_text': recognized_text,
+                    'formatted_message': user_response,
+                    'round': round_num
+                })
+                
+            except ImportError as e:
+                logger.error(f"语音识别模块导入失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': '语音识别功能不可用'
+                }), 500
+            except Exception as e:
+                logger.error(f"语音识别失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'语音识别失败: {str(e)}'
                 }), 500
         
         @self.app.route('/api/next-speaker', methods=['POST'])

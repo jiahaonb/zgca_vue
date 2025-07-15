@@ -91,10 +91,6 @@
                       </div>
                     </div>
 
-                    <!-- 在用户消息后显示状态提示 -->
-                    <div v-if="isUserMessage(message) && index === chatHistory.length - 1 && !isTyping" class="status-tip">
-                      <span>⏳ 等待AI角色回复...</span>
-                    </div>
                   </div>
                 </div>
 
@@ -118,6 +114,11 @@
                   <span>📤 正在发送消息...</span>
                 </div>
 
+                <!-- 下一个发言人提示 -->
+                <div v-if="nextSpeaker && !isTyping && !isSending" class="status-tip next-speaker">
+                  <span>🎯 下一个发言人：{{ nextSpeaker }}</span>
+                </div>
+
                 <!-- 下一步提示 -->
                 <div v-else-if="chatHistory.length > 0 && !isTyping" class="status-tip next-action">
                   <span v-if="shouldUserSpeak && currentMessage.trim()">
@@ -125,9 +126,6 @@
                   </span>
                   <span v-else-if="shouldUserSpeak">
                     💭 您是否需要在此处发言？如果需要，请在下方输入台词
-                  </span>
-                  <span v-else-if="nextSpeaker">
-                    🎯 下一个发言者：{{ nextSpeaker }}
                   </span>
                   <span v-else>
                     🔄 请点击"调度下一个角色"或继续对话
@@ -168,6 +166,15 @@
                     :disabled="!isScriptReady || isSending"
                   >
                     {{ isSending ? '调度中...' : '跳过发言' }}
+                  </el-button>
+                  <el-button 
+                    type="warning" 
+                    @click="voiceInput"
+                    :loading="isRecording"
+                    :disabled="!isScriptReady || isSending || isRecording"
+                  >
+                    <el-icon><Microphone /></el-icon>
+                    {{ isRecording ? '录音中...' : '语音输入' }}
                   </el-button>
                   <el-button 
                     type="primary" 
@@ -272,7 +279,7 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick, inject } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import apiService from '../services/api.js'
@@ -288,6 +295,7 @@ export default {
     const isScriptReady = ref(false)
     const isSending = ref(false)
     const isTyping = ref(false)
+    const isRecording = ref(false)
     const typingSpeaker = ref('')
     const currentMessage = ref('')
     const currentRound = ref(1)
@@ -297,6 +305,7 @@ export default {
     const autoDialogVisible = ref(false)
     const shouldUserSpeak = ref(true) // 判断是否该用户发言
     const scriptEnded = ref(false) // 标记剧本是否已结束
+    const speakerDisplayTimer = ref(null) // 发言人提示显示计时器
 
     const autoForm = ref({
       rounds: 5
@@ -412,10 +421,27 @@ export default {
           currentMessage.value = ''
           await scrollToBottom()
 
+          // 清除之前的定时器
+          if (speakerDisplayTimer.value) {
+            clearTimeout(speakerDisplayTimer.value)
+            speakerDisplayTimer.value = null
+          }
+          
+          // 立即查询下一个发言人并显示提示
+          try {
+            const nextSpeakerResult = await apiService.getNextSpeaker(currentRound.value)
+            if (nextSpeakerResult.success && nextSpeakerResult.next_speaker) {
+              nextSpeaker.value = nextSpeakerResult.next_speaker
+              console.log('预显示下一个发言人:', nextSpeakerResult.next_speaker)
+            }
+          } catch (error) {
+            console.error('查询下一个发言人失败:', error)
+          }
+
           // 短暂延迟后获取AI回应
           setTimeout(async () => {
             await getAIResponse()
-          }, 500)
+          }, 1000) // 增加延迟时间让用户看到提示
         }
       } catch (error) {
         ElMessage.error(error.message || '发送消息失败')
@@ -433,22 +459,20 @@ export default {
         shouldUserSpeak.value = false
         
         console.log('调用getAIResponse，当前轮次:', currentRound.value)
+        console.log('当前nextSpeaker:', nextSpeaker.value)
         
-        // 获取下一个发言者
-        const nextSpeakerResult = await apiService.getNextSpeaker(currentRound.value)
-        console.log('下一个发言者结果:', nextSpeakerResult)
-        
-        if (nextSpeakerResult.success && nextSpeakerResult.speaker_type === 'ai' && nextSpeakerResult.next_speaker) {
-          typingSpeaker.value = nextSpeakerResult.next_speaker
-          nextSpeaker.value = nextSpeakerResult.next_speaker
+        // 如果已经有nextSpeaker且是AI角色，直接使用
+        if (nextSpeaker.value && nextSpeaker.value !== '我') {
+          const aiSpeaker = nextSpeaker.value
+          typingSpeaker.value = aiSpeaker
           
-          console.log('调度AI角色发言:', nextSpeakerResult.next_speaker)
+          console.log('使用预设的AI角色发言:', aiSpeaker)
 
           // AI发言
           const aiResult = await apiService.aiSpeak(
-            nextSpeakerResult.next_speaker, 
+            aiSpeaker, 
             currentRound.value,
-            `这是第${currentRound.value}轮对话，按照剧情发展，现在轮到${nextSpeakerResult.next_speaker}发言`
+            `这是第${currentRound.value}轮对话，按照剧情发展，现在轮到${aiSpeaker}发言`
           )
           
           console.log('AI发言结果:', aiResult)
@@ -459,14 +483,76 @@ export default {
             shouldUserSpeak.value = true // AI发言后，轮到用户
             await scrollToBottom()
             console.log('AI发言成功，轮到用户发言')
+            
+            // 设置10秒延迟后再显示"下一个发言人：我"
+            if (speakerDisplayTimer.value) {
+              clearTimeout(speakerDisplayTimer.value)
+            }
+            speakerDisplayTimer.value = setTimeout(() => {
+              nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
+              console.log('10秒后显示：下一个发言人是我')
+            }, 10000)
           }
-        } else if (nextSpeakerResult.success && nextSpeakerResult.speaker_type === 'user') {
-          // 如果按照剧情下一个是用户，直接提示
-          console.log('剧情调度结果：下一个是用户')
-          shouldUserSpeak.value = true
         } else {
-          console.log('无法确定下一个发言者，默认轮到用户')
-          shouldUserSpeak.value = true
+          // 如果没有预设，重新获取下一个发言者
+          const nextSpeakerResult = await apiService.getNextSpeaker(currentRound.value)
+          console.log('重新获取下一个发言者结果:', nextSpeakerResult)
+          
+          if (nextSpeakerResult.success && nextSpeakerResult.speaker_type === 'ai' && nextSpeakerResult.next_speaker) {
+            typingSpeaker.value = nextSpeakerResult.next_speaker
+            nextSpeaker.value = nextSpeakerResult.next_speaker
+            
+            console.log('调度AI角色发言:', nextSpeakerResult.next_speaker)
+
+            // AI发言
+            const aiResult = await apiService.aiSpeak(
+              nextSpeakerResult.next_speaker, 
+              currentRound.value,
+              `这是第${currentRound.value}轮对话，按照剧情发展，现在轮到${nextSpeakerResult.next_speaker}发言`
+            )
+            
+            console.log('AI发言结果:', aiResult)
+            
+            if (aiResult.success) {
+              chatHistory.value.push(aiResult.message)
+              currentRound.value++
+              shouldUserSpeak.value = true // AI发言后，轮到用户
+              await scrollToBottom()
+              console.log('AI发言成功，轮到用户发言')
+              
+              // 设置10秒延迟后再显示"下一个发言人：我"
+              if (speakerDisplayTimer.value) {
+                clearTimeout(speakerDisplayTimer.value)
+              }
+              speakerDisplayTimer.value = setTimeout(() => {
+                nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
+                console.log('10秒后显示：下一个发言人是我')
+              }, 10000)
+            }
+          } else if (nextSpeakerResult.success && nextSpeakerResult.speaker_type === 'user') {
+            // 如果按照剧情下一个是用户，直接提示
+            console.log('剧情调度结果：下一个是用户')
+            shouldUserSpeak.value = true
+            // 设置10秒延迟后再显示"下一个发言人：我"
+            if (speakerDisplayTimer.value) {
+              clearTimeout(speakerDisplayTimer.value)
+            }
+            speakerDisplayTimer.value = setTimeout(() => {
+              nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
+              console.log('10秒后显示：下一个发言人是我')
+            }, 10000)
+          } else {
+            console.log('无法确定下一个发言者，默认轮到用户')
+            shouldUserSpeak.value = true
+            // 设置10秒延迟后再显示"下一个发言人：我"
+            if (speakerDisplayTimer.value) {
+              clearTimeout(speakerDisplayTimer.value)
+            }
+            speakerDisplayTimer.value = setTimeout(() => {
+              nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
+              console.log('10秒后显示：下一个发言人是我')
+            }, 10000)
+          }
         }
       } catch (error) {
         ElMessage.error(error.message || '剧情调度失败')
@@ -493,10 +579,27 @@ export default {
         if (userResult.success) {
           // 不在聊天框显示跳过消息，但调度逻辑和发言完毕一样
           
+          // 清除之前的定时器
+          if (speakerDisplayTimer.value) {
+            clearTimeout(speakerDisplayTimer.value)
+            speakerDisplayTimer.value = null
+          }
+          
+          // 立即查询下一个发言人并显示提示
+          try {
+            const nextSpeakerResult = await apiService.getNextSpeaker(currentRound.value)
+            if (nextSpeakerResult.success && nextSpeakerResult.next_speaker) {
+              nextSpeaker.value = nextSpeakerResult.next_speaker
+              console.log('跳过后预显示下一个发言人:', nextSpeakerResult.next_speaker)
+            }
+          } catch (error) {
+            console.error('查询下一个发言人失败:', error)
+          }
+          
           // 短暂延迟后获取AI回应，与发言完毕逻辑一致
           setTimeout(async () => {
             await getAIResponse()
-          }, 500)
+          }, 1000) // 增加延迟时间让用户看到提示
         }
       } catch (error) {
         ElMessage.error(error.message || '调度失败')
@@ -510,6 +613,58 @@ export default {
     // 获取下一个发言者(与跳过逻辑相同)
     const getNextSpeaker = async () => {
       await skipTurn()
+    }
+
+    // 语音输入
+    const voiceInput = async () => {
+      if (!isScriptReady.value || isSending.value || isRecording.value) {
+        return
+      }
+
+      try {
+        isRecording.value = true
+        ElMessage.info('正在录音，请说话...')
+        
+        // 调用后端语音识别接口
+        const voiceResult = await apiService.voiceInput(5, currentRound.value) // 录音5秒
+        
+        if (voiceResult.success) {
+          ElMessage.success(`语音识别成功：${voiceResult.recognized_text}`)
+          
+          // 将识别结果添加到聊天历史
+          chatHistory.value.push(voiceResult.formatted_message)
+          await scrollToBottom()
+
+          // 清除之前的定时器
+          if (speakerDisplayTimer.value) {
+            clearTimeout(speakerDisplayTimer.value)
+            speakerDisplayTimer.value = null
+          }
+          
+          // 立即查询下一个发言人并显示提示
+          try {
+            const nextSpeakerResult = await apiService.getNextSpeaker(currentRound.value)
+            if (nextSpeakerResult.success && nextSpeakerResult.next_speaker) {
+              nextSpeaker.value = nextSpeakerResult.next_speaker
+              console.log('语音输入后预显示下一个发言人:', nextSpeakerResult.next_speaker)
+            }
+          } catch (error) {
+            console.error('查询下一个发言人失败:', error)
+          }
+
+          // 短暂延迟后获取AI回应
+          setTimeout(async () => {
+            await getAIResponse()
+          }, 1000)
+        } else {
+          ElMessage.error(voiceResult.error || '语音识别失败')
+        }
+      } catch (error) {
+        ElMessage.error(error.message || '语音识别失败')
+        console.error('语音识别失败:', error)
+      } finally {
+        isRecording.value = false
+      }
     }
 
     // 清空对话
@@ -652,11 +807,20 @@ export default {
       }
     })
 
+    onUnmounted(() => {
+      // 清理定时器
+      if (speakerDisplayTimer.value) {
+        clearTimeout(speakerDisplayTimer.value)
+        speakerDisplayTimer.value = null
+      }
+    })
+
     return {
       chatHistoryRef,
       isScriptReady,
       isSending,
       isTyping,
+      isRecording,
       typingSpeaker,
       currentMessage,
       currentRound,
@@ -676,6 +840,7 @@ export default {
       formatTime,
       sendMessage,
       skipTurn,
+      voiceInput,
       getNextSpeaker,
       clearChat,
       autoConversation,
@@ -872,6 +1037,24 @@ export default {
   gap: 8px;
 }
 
+.action-buttons .el-button--warning {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-color: #f59e0b;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.action-buttons .el-button--warning:hover {
+  background: linear-gradient(135deg, #d97706, #b45309);
+  border-color: #d97706;
+  transform: translateY(-1px);
+}
+
+.action-buttons .el-button--warning.is-loading {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-color: #ef4444;
+}
+
 .info-panel {
   height: calc(100vh - 140px);
   overflow-y: auto;
@@ -999,6 +1182,14 @@ export default {
   color: #409EFF;
   border-color: rgba(64, 158, 255, 0.3);
   font-weight: 500;
+}
+
+.status-tip.next-speaker {
+  background: rgba(230, 162, 60, 0.1);
+  color: #E6A23C;
+  border-color: rgba(230, 162, 60, 0.3);
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .status-tip.warning {

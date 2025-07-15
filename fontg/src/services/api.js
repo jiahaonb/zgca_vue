@@ -152,6 +152,19 @@ class ApiService {
       throw new Error(`清空历史失败: ${error.response?.data?.error || error.message}`)
     }
   }
+
+  // 语音输入识别
+  async voiceInput(duration = 5, round = 1) {
+    try {
+      const response = await api.post('/voice-input', {
+        duration,
+        round
+      })
+      return response.data
+    } catch (error) {
+      throw new Error(`语音识别失败: ${error.response?.data?.error || error.message}`)
+    }
+  }
 }
 
 export default new ApiService() 
