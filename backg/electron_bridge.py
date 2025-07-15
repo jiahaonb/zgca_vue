@@ -140,10 +140,7 @@ class ElectronBridge:
                 round_num = data.get('round', 1)
                 
                 if not message:
-                    return jsonify({
-                        'success': False,
-                        'error': '消息内容不能为空'
-                    }), 400
+                    message = " "
                 
                 if not self.script_system or not self.script_system.is_initialized:
                     return jsonify({
@@ -324,7 +321,8 @@ class ElectronBridge:
                     }), 400
                 
                 data = request.get_json()
-                message = data.get('message', '').strip()
+                original_message = data.get('message', '')
+                message = original_message.strip()
                 round_num = data.get('round', 1)
                 action = data.get('action', 'speak')  # 'speak' 或 'skip'
                 
@@ -335,6 +333,23 @@ class ElectronBridge:
                         'success': True,
                         'action': 'skip',
                         'message': '用户选择跳过',
+                        'round': round_num
+                    })
+                
+                # 如果原始消息是换行符，视为跳过
+                if original_message == '\n':
+                    logger.info(f"用户发送换行符跳过发言 (第{round_num}轮)")
+                    # 添加换行符到历史记录，表示用户跳过
+                    user_response = f"我：\\n"
+                    self.script_system.scheduler.add_to_history(user_response)
+                    self.script_system.last_speaker = "我"
+                    self.script_system.conversation_count += 1
+                    
+                    return jsonify({
+                        'success': True,
+                        'action': 'speak',
+                        'message': '\n',
+                        'formatted_message': user_response,
                         'round': round_num
                     })
                 

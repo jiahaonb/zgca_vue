@@ -9,9 +9,6 @@ API_KEYS = [
     "sk-57bfae7de6db4b22a013be0906eb6809",
     "sk-d9f61a42b06f4baaa7c5903da4faba21",
     "sk-1d72f43e0364435382113a410faf53fb",
-    "sk-c4f5afd99b044134add120519acd0138",
-    "sk-ecf04edc6f2b48b9835d7b064520b912",
-    "sk-7f85f4dbc6b84caba87e7d3df5a1e2b7",
 ]
 
 # DeepSeek API配置

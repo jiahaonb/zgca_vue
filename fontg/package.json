@@ -1,0 +1,26 @@
+{
+  "name": "zgca-vue-frontend",
+  "version": "1.0.0",
+  "description": "ZGCA多智能体剧本编辑系统前端",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "serve": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.0",
+    "axios": "^1.6.0",
+    "element-plus": "^2.4.0",
+    "@element-plus/icons-vue": "^2.3.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.5.0",
+    "vite": "^5.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+} 
