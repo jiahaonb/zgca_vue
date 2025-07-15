@@ -10,9 +10,6 @@ from script_system import ScriptSystem
 from word_to_vi import text_to_image
 import threading
 import time
-import sys
-sys.path.append('..')
-from text2speak import tts_text_to_duration
 
 # 配置日志 - 设置UTF-8编码
 import sys
@@ -916,71 +913,6 @@ class ElectronBridge:
             except Exception as e:
                 logger.error(f"提供图片文件失败: {e}")
                 return jsonify({'error': f'提供图片文件失败: {str(e)}'}), 500
-
-        @self.app.route('/api/tts', methods=['POST'])
-        def text_to_speech():
-            """文本转语音API"""
-            try:
-                data = request.get_json()
-                text = data.get('text', '').strip()
-                
-                if not text:
-                    return jsonify({
-                        'success': False,
-                        'error': '文本内容不能为空'
-                    }), 400
-                
-                # 生成唯一的音频文件名
-                import uuid
-                audio_filename = f"audio_{uuid.uuid4().hex[:8]}.wav"
-                audio_path = os.path.join("audio", audio_filename)
-                
-                # 确保audio目录存在
-                os.makedirs("audio", exist_ok=True)
-                
-                logger.info(f"开始TTS转换: {text[:50]}...")
-                
-                # 调用TTS函数生成音频并获取时长
-                duration = tts_text_to_duration(text, audio_path)
-                
-                logger.info(f"TTS转换完成，时长: {duration:.2f}秒")
-                
-                return jsonify({
-                    'success': True,
-                    'audio_url': f'/audio/{audio_filename}',
-                    'duration': duration,
-                    'text': text
-                })
-                
-            except Exception as e:
-                logger.error(f"TTS转换失败: {e}")
-                return jsonify({
-                    'success': False,
-                    'error': f'TTS转换失败: {str(e)}'
-                }), 500
-
-        @self.app.route('/audio/<filename>')
-        def serve_audio(filename):
-            """提供音频文件服务"""
-            try:
-                audio_path = os.path.join("audio", filename)
-                
-                if not os.path.exists(audio_path):
-                    logger.error(f"音频文件不存在: {audio_path}")
-                    return jsonify({'error': '音频文件不存在'}), 404
-                
-                # 检查文件扩展名
-                allowed_extensions = {'.wav', '.mp3', '.ogg', '.m4a'}
-                file_ext = os.path.splitext(filename)[1].lower()
-                if file_ext not in allowed_extensions:
-                    return jsonify({'error': '不支持的音频格式'}), 400
-                
-                logger.info(f"提供音频文件: {audio_path}")
-                return send_file(audio_path)
-                
-            except Exception as e:
-                logger.error(f"提供音频文件失败: {e}")
-                return jsonify({'error': f'提供音频文件失败: {str(e)}'}), 500
 
         @self.app.route('/', methods=['GET'])
         def root():
