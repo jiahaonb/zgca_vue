@@ -9,7 +9,9 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8900',
         changeOrigin: true,
-        secure: false
+        secure: false,
+        timeout: 600000, // 10分钟超时，足够处理图片生成
+        proxyTimeout: 600000 // 代理超时时间
       }
     }
   },

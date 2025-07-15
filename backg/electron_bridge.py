@@ -182,6 +182,9 @@ class ElectronBridge:
                 # 添加AI回应到历史记录
                 self.script_system.scheduler.add_to_history(ai_response)
                 
+                # 检查并触发后台图片生成（每3轮对话）
+                self.script_system.check_and_trigger_background_image_generation(round_num)
+                
                 response_data = {
                     'success': True,
                     'response': ai_response,
@@ -647,6 +650,9 @@ class ElectronBridge:
                 self.script_system.last_speaker = speaker
                 self.script_system.conversation_count += 1
                 
+                # 检查并触发后台图片生成（每3轮对话）
+                self.script_system.check_and_trigger_background_image_generation(round_num)
+                
                 return jsonify({
                     'success': True,
                     'speaker': speaker,
@@ -847,12 +853,73 @@ class ElectronBridge:
                     'error': f'获取场景图片失败: {str(e)}'
                 }), 500
         
+        @self.app.route('/api/get-scene-image-url', methods=['GET'])
+        def get_scene_image_url():
+            """获取当前场景图片URL"""
+            try:
+                if not self.script_system or not self.script_system.is_initialized:
+                    return jsonify({
+                        'success': False,
+                        'error': '请先创建剧本设定'
+                    }), 400
+                
+                # 获取当前图片路径
+                image_path = self.script_system.scheduler.get_current_image_path()
+                
+                if image_path and os.path.exists(image_path):
+                    # 将绝对路径转换为相对于backg目录的路径
+                    relative_path = os.path.relpath(image_path, os.getcwd())
+                    image_url = f"/image/{relative_path.replace(os.sep, '/')}"
+                    
+                    return jsonify({
+                        'success': True,
+                        'image_url': image_url,
+                        'image_path': image_path
+                    })
+                else:
+                    return jsonify({
+                        'success': False,
+                        'error': '暂无可用的场景图片'
+                    })
+                    
+            except Exception as e:
+                logger.error(f"获取场景图片失败: {e}")
+                return jsonify({
+                    'success': False,
+                    'error': f'获取场景图片失败: {str(e)}'
+                }), 500
+        
+        @self.app.route('/image/<path:filename>')
+        def serve_image(filename):
+            """提供图片文件服务"""
+            try:
+                # 构建完整的文件路径
+                file_path = os.path.join(os.getcwd(), filename)
+                
+                # 检查文件是否存在
+                if not os.path.exists(file_path):
+                    logger.error(f"图片文件不存在: {file_path}")
+                    return jsonify({'error': '图片文件不存在'}), 404
+                
+                # 检查文件扩展名
+                allowed_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'}
+                file_ext = os.path.splitext(filename)[1].lower()
+                if file_ext not in allowed_extensions:
+                    return jsonify({'error': '不支持的文件格式'}), 400
+                
+                logger.info(f"提供图片文件: {file_path}")
+                return send_file(file_path)
+                
+            except Exception as e:
+                logger.error(f"提供图片文件失败: {e}")
+                return jsonify({'error': f'提供图片文件失败: {str(e)}'}), 500
+
         @self.app.route('/', methods=['GET'])
         def root():
             """根路径 - 返回API信息"""
             return jsonify({
                 'success': True,
-                'service': 'ZGCA多智能体剧本编辑系统 - Electron Bridge',
+                'service': '浮生：多Agent驱动的沉浸式文化互动剧场 - Electron Bridge',
                 'version': '1.0.0',
                 'status': 'running',
                 'port': self.port,

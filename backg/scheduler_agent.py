@@ -3,6 +3,7 @@
 """
 
 import re
+import threading
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 from character_agent import CharacterAgent
@@ -46,6 +47,10 @@ class SchedulerAgent:
         # 用户当前扮演的角色信息
         self.user_current_character = None  # 用户当前扮演的角色名
         self.user_character_info = None     # 用户扮演角色的详细信息
+        
+        # 图片生成相关
+        self.current_image_path = None      # 当前场景图片路径
+        self.background_generating = False  # 是否正在后台生成图片
     
     def create_script_setting(self, user_input: str) -> Dict[str, Any]:
         """
@@ -461,7 +466,7 @@ class SchedulerAgent:
         """
         try:
             # 检查用户是否已经选择角色
-            if self.user_current_character and self.user_current_character in self.characters:
+            if self.user_current_character and self.user_character_info:
                 # 用户已选择角色，只为该角色生成多个台词选项
                 selected_characters = [{
                     'name': self.user_current_character,
@@ -695,13 +700,93 @@ class SchedulerAgent:
 
             if image_path:
                 print(f"✅ 图片已保存到: {image_path}")
+                # 更新当前图片路径
+                self.current_image_path = image_path
                 return image_path
             return None
 
         except Exception as e:
             print(f"❌ 图片生成出错: {str(e)}")
             return None
-    
+
+    def generate_background_image(self, round_num: int) -> None:
+        """
+        后台生成图片，基于历史对话记录更新场景
+        
+        Args:
+            round_num: 当前轮次编号
+        """
+        if self.background_generating:
+            print("⏳ 已有图片正在后台生成中，跳过")
+            return
+            
+        def background_task():
+            try:
+                self.background_generating = True
+                print(f"🎨 第{round_num}轮：开始后台生成新场景图片...")
+                
+                # 构建基于全部历史对话的图片描述
+                all_dialogue = '\n'.join(self.conversation_history)
+                scene_desc = self.scene_setting
+                plot_desc = self.plot_summary
+                characters = ', '.join([name for name in self.characters.keys() if name != USER_CHARACTER_NAME])
+                
+                # 生成更丰富的图片描述，体现对话发展
+                image_description = (
+                    f"场景设定：{scene_desc}\n\n"
+                    f"剧情发展：{plot_desc}\n\n"
+                    f"对话发展历程：\n{all_dialogue}\n\n"
+                    f"基于以上完整对话历程，画面需要体现：\n"
+                    f"1. 场景演变：根据对话发展调整环境细节\n"
+                    f"2. 角色状态：{characters}的情绪和动作变化\n"
+                    f"3. 剧情进展：体现当前剧情发展阶段\n"
+                    f"4. 氛围营造：符合对话发展的整体氛围"
+                )
+                
+                print("📝 后台生成的图片描述：")
+                print(image_description)
+                
+                # 获取保存路径
+                save_dir = './output'
+                sub_dir = f"{save_dir}/{round_num}"
+                os.makedirs(sub_dir, exist_ok=True)
+                
+                # 生成适合模型的prompt
+                scene_key = scene_desc.split('。')[0] if '。' in scene_desc else scene_desc[:20]
+                model_prompt = (
+                    f"专业摄影风格，8K高清，电影级画质，{scene_key}，"
+                    f"包含角色：{characters}，"
+                    f"体现剧情发展和角色互动，氛围丰富，细节精美"
+                )
+                
+                # 生成并保存图片
+                print("🖼️ 后台正在生成图片...")
+                image_path = self.text_to_image(model_prompt, sub_dir)
+                
+                if image_path:
+                    self.current_image_path = image_path
+                    print(f"✅ 后台图片生成完成：{image_path}")
+                else:
+                    print("❌ 后台图片生成失败")
+                    
+            except Exception as e:
+                print(f"❌ 后台图片生成出错：{str(e)}")
+            finally:
+                self.background_generating = False
+        
+        # 在后台线程中执行
+        thread = threading.Thread(target=background_task, daemon=True)
+        thread.start()
+
+    def get_current_image_path(self) -> Optional[str]:
+        """
+        获取当前场景图片路径
+        
+        Returns:
+            当前图片路径，如果没有则返回None
+        """
+        return self.current_image_path
+
     def set_user_character(self, character_name: str) -> bool:
         """
         设置用户当前扮演的角色

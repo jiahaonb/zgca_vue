@@ -11,7 +11,7 @@
       <div class="creation-content">
         <!-- 说明区域 -->
         <el-alert
-          title="欢迎来到ZGCA多智能体剧本编辑系统！"
+          title="欢迎来到浮生：多Agent驱动的沉浸式文化互动剧场！"
           type="info"
           :closable="false"
           class="intro-alert"

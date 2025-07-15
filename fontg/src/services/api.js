@@ -3,7 +3,7 @@ import axios from 'axios'
 // 创建axios实例
 const api = axios.create({
   baseURL: '/api',
-  timeout: 30000,
+  timeout: 600000, // 10分钟超时，与Vite代理保持一致
   headers: {
     'Content-Type': 'application/json'
   }
@@ -60,6 +60,8 @@ class ApiService {
     try {
       const response = await api.post('/create-script', {
         sceneDescription
+      }, {
+        timeout: 900000 // 15分钟超时，创建剧本包含图片生成需要更长时间
       })
       return response.data
     } catch (error) {
@@ -213,7 +215,9 @@ class ApiService {
   // 生成场景图片
   async generateSceneImage() {
     try {
-      const response = await api.post('/generate-scene-image')
+      const response = await api.post('/generate-scene-image', {}, {
+        timeout: 900000 // 15分钟超时，图片生成需要较长时间
+      })
       return response.data
     } catch (error) {
       throw new Error(`生成场景图片失败: ${error.response?.data?.error || error.message}`)
@@ -222,7 +226,18 @@ class ApiService {
 
   // 获取场景图片URL
   getSceneImageUrl() {
-    return `${api.defaults.baseURL}/get-scene-image?t=${Date.now()}`
+    const baseURL = api.defaults.baseURL || 'http://localhost:5000'
+    return `${baseURL}/scene-image`
+  }
+
+  // 获取最新场景图片信息
+  async getLatestSceneImage() {
+    try {
+      const response = await api.get('/get-scene-image-url')
+      return response.data
+    } catch (error) {
+      throw new Error(`获取最新场景图片失败: ${error.response?.data?.error || error.message}`)
+    }
   }
 
   // 获取用户当前扮演的角色

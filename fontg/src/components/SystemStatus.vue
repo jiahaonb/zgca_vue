@@ -439,7 +439,7 @@ export default {
       // 更新运行时间（每秒）
       timeTimer = setInterval(() => {
         currentTime.value = Date.now()
-      }, 1000)
+      }, 500)
     })
 
     onUnmounted(() => {

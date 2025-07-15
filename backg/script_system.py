@@ -7,6 +7,7 @@ from scheduler_agent import SchedulerAgent
 from api_pool import APIKeyPool
 from config import API_KEYS, USER_CHARACTER_NAME
 from record_voc import record_and_recognize
+import threading
 
 class ScriptSystem:
     def __init__(self):
@@ -24,6 +25,10 @@ class ScriptSystem:
         self.is_initialized = False
         self.conversation_count = 0
         self.last_speaker = None  # 记录上一个说话的角色
+        
+        # 图片生成相关
+        self.image_generation_interval = 3  # 每3轮对话生成一次图片
+        self.last_image_round = 0  # 上次生成图片的轮次
         
     def initialize_script(self, user_input: str) -> Dict[str, Any]:
         """
@@ -66,12 +71,53 @@ class ScriptSystem:
         for character_info in self.scheduler.get_characters_info():
             print(f"  - {character_info['name']}: {character_info['info']}")
         
+        # 启动后台任务生成初始场景图片（不等待完成）
+        print("\n🖼️ 正在后台生成初始场景图片...")
+        threading.Thread(
+            target=self._generate_initial_image_async, 
+            daemon=True
+        ).start()
+        
         return {
             "success": True,
             "characters_count": len(characters_info),
             "characters": characters_info
         }
     
+    def _generate_initial_image_async(self):
+        """
+        异步生成初始场景图片的后台任务
+        """
+        try:
+            initial_image_path = self.scheduler.generate_graph(0)  # 使用0作为初始图片编号
+            if initial_image_path:
+                print(f"✅ 初始场景图片生成完成: {initial_image_path}")
+            else:
+                print("⚠️ 初始场景图片生成失败，但不影响剧本功能")
+        except Exception as e:
+            print(f"❌ 后台生成初始图片时出错: {str(e)}")
+    
+    def check_and_trigger_background_image_generation(self, current_round: int) -> None:
+        """
+        检查是否需要触发后台图片生成
+        
+        Args:
+            current_round: 当前对话轮次
+        """
+        if not self.is_initialized:
+            return
+            
+        # 检查是否达到图片生成间隔
+        rounds_since_last_image = current_round - self.last_image_round
+        
+        if rounds_since_last_image >= self.image_generation_interval:
+            print(f"🎨 第{current_round}轮：触发后台图片生成 (上次生成：第{self.last_image_round}轮)")
+            self.scheduler.generate_background_image(current_round)
+            self.last_image_round = current_round
+        else:
+            remaining_rounds = self.image_generation_interval - rounds_since_last_image
+            print(f"📊 第{current_round}轮：距离下次图片生成还有 {remaining_rounds} 轮")
+
     def start_conversation(self, rounds: int = 10) -> None:
         """
         开始多轮对话

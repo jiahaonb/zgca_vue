@@ -96,63 +96,7 @@
               </el-empty>
                         </div>
 
-            <!-- 消息输入区域 -->
-            <div class="message-input-container">
-              <div class="message-input">
-                <div class="input-wrapper">
-                  <el-input
-                    v-model="currentMessage"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="输入您的台词..."
-                    @keydown.ctrl.enter="sendMessage"
-                    :disabled="!isScriptReady || isSending"
-                    show-word-limit
-                    maxlength="500"
-                    resize="none"
-                  />
-                </div>
-                <div class="input-actions">
-                  <div class="input-tips">
-                    <span class="tip-text">Ctrl + Enter 快速发送 | 🎤 语音录音 | 📋 智能推荐台词</span>
-                    <span class="round-info">第 {{ currentRound }} 轮对话</span>
-                  </div>
-                  <div class="action-buttons">
-                    <el-button 
-                      type="info" 
-                      @click="showDialogueOptions"
-                      :disabled="!isScriptReady || isSending"
-                    >
-                      <el-icon><List /></el-icon>
-                      选择台词
-                    </el-button>
-                    <el-button 
-                      type="default" 
-                      @click="skipTurn"
-                      :disabled="!isScriptReady || isSending"
-                    >
-                      {{ isSending ? '调度中...' : '跳过发言' }}
-                    </el-button>
-                    <el-button 
-                      :type="isRecording ? 'danger' : 'warning'"
-                      @click="toggleVoiceRecording"
-                      :disabled="!isScriptReady || isSending"
-                    >
-                      <el-icon><Microphone /></el-icon>
-                      {{ isRecording ? '停止录音' : '开始录音' }}
-                    </el-button>
-                    <el-button 
-                      type="primary" 
-                      @click="sendMessage"
-                      :loading="isSending"
-                      :disabled="!isScriptReady || !currentMessage.trim()"
-                    >
-                      {{ isSending ? '发送中...' : '发送' }}
-                    </el-button>
-                  </div>
-                </div>
-              </div>
-            </div>
+
           </div>
         </el-card>
       </el-col>
@@ -166,6 +110,70 @@
               <span>对话信息</span>
             </div>
           </template>
+
+          <!-- 消息输入区域 -->
+          <div class="message-input-section">
+            <div class="message-input">
+              <div class="input-wrapper">
+                <el-input
+                  v-model="currentMessage"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="输入您的台词..."
+                  @keydown.ctrl.enter="sendMessage"
+                  :disabled="!isScriptReady || isSending"
+                  show-word-limit
+                  maxlength="500"
+                  resize="none"
+                />
+              </div>
+              <div class="input-actions">
+                <div class="input-tips">
+                  <span class="tip-text">Ctrl+Enter发送</span>
+                  <span class="round-info">第 {{ currentRound }} 轮</span>
+                </div>
+                <div class="action-buttons">
+                  <el-button 
+                    size="small"
+                    type="info" 
+                    @click="showDialogueOptions"
+                    :disabled="!isScriptReady || isSending"
+                  >
+                    <el-icon><List /></el-icon>
+                    选择台词
+                  </el-button>
+                  <el-button 
+                    size="small"
+                    type="default" 
+                    @click="skipTurn"
+                    :disabled="!isScriptReady || isSending"
+                  >
+                    {{ isSending ? '调度中' : '跳过' }}
+                  </el-button>
+                </div>
+                <div class="send-row">
+                  <el-button 
+                    size="small"
+                    :type="isRecording ? 'danger' : 'warning'"
+                    @click="toggleVoiceRecording"
+                    :disabled="!isScriptReady || isSending"
+                  >
+                    <el-icon><Microphone /></el-icon>
+                    {{ isRecording ? '停止录音' : '语音' }}
+                  </el-button>
+                  <el-button 
+                    size="small"
+                    type="primary" 
+                    @click="sendMessage"
+                    :loading="isSending"
+                    :disabled="!isScriptReady || !currentMessage.trim()"
+                  >
+                    {{ isSending ? '发送中...' : '发送' }}
+                  </el-button>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- 角色信息 -->
           <div class="character-section">
@@ -222,7 +230,7 @@
             <h4>快捷操作</h4>
             <div class="action-list">
               <el-button size="small" type="primary" @click="autoConversation" :disabled="!isScriptReady">
-                <el-icon><Magic /></el-icon>
+                <el-icon><Star /></el-icon>
                 自动对话
               </el-button>
               <el-button size="small" type="info" @click="getNextSpeaker" :disabled="!isScriptReady || isTyping || isSending">
@@ -247,7 +255,7 @@
     <el-dialog v-model="autoDialogVisible" title="自动对话设置" width="400px">
       <el-form :model="autoForm" label-width="80px">
         <el-form-item label="对话轮数">
-          <el-input-number v-model="autoForm.rounds" :min="1" :max="20" />
+          <el-input-number v-model="autoForm.rounds" :min="1" :max="100" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -302,6 +310,21 @@ import { ref, onMounted, onUnmounted, nextTick, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import apiService from '../services/api.js'
+import { 
+  ChatDotRound, 
+  Refresh, 
+  Delete, 
+  Close, 
+  User, 
+  ArrowRight, 
+  Star, 
+  Edit, 
+  Loading, 
+  Microphone, 
+  List, 
+  Connection,
+  Picture
+} from '@element-plus/icons-vue'
 
 export default {
   name: 'ChatInterface',
@@ -343,6 +366,10 @@ export default {
     const currentSpeakerName = ref('') // 当前说话人名字
     const currentSpeakerAvatar = ref('') // 当前说话人头像
     const dialogueTimer = ref(null) // 对话显示计时器
+    
+    // 图片自动更新相关
+    const imageUpdateTimer = ref(null) // 图片更新检查计时器
+    const lastImageUrl = ref(null) // 上次的图片URL
 
     const autoForm = ref({
       rounds: 5
@@ -363,6 +390,34 @@ export default {
           // 如果剧本状态从未就绪变为就绪，重新加载用户角色信息
           if (!wasReady) {
             await loadUserCharacter()
+            
+            // 首先检查是否已有场景图片（后端可能已生成）
+            setTimeout(async () => {
+              await checkLatestImage()
+              
+              // 如果还没有图片，则等待更长时间后再次检查
+              if (!sceneImageUrl.value) {
+                console.log('🖼️ 第一次检查未发现图片，等待后台生成...')
+                
+                // 再等待5秒后检查
+                setTimeout(async () => {
+                  await checkLatestImage()
+                  
+                  // 如果还是没有图片，则手动生成
+                  if (!sceneImageUrl.value) {
+                    console.log('🖼️ 后台图片生成超时，手动生成...')
+                    generateSceneImage()
+                  } else {
+                    console.log('🖼️ 检测到后台生成的场景图片')
+                  }
+                }, 5000) // 再等5秒
+              } else {
+                console.log('🖼️ 检测到已有场景图片，无需重新生成')
+              }
+            }, 3000) // 延迟3秒，给后端初始图片生成更多时间
+            
+            // 启动图片自动更新检查
+            startImageAutoUpdate()
           }
         } else {
           // 如果后端没有初始化的剧本，但前端还没标记为结束，说明是初始状态
@@ -594,7 +649,7 @@ export default {
             }
             speakerDisplayTimer.value = setTimeout(() => {
               nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
-              console.log('10秒后显示：下一个发言人是我')
+              // console.log('10秒后显示：下一个发言人是我')
             }, 10000)
           }
         } else {
@@ -635,7 +690,7 @@ export default {
               }
               speakerDisplayTimer.value = setTimeout(() => {
                 nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
-                console.log('10秒后显示：下一个发言人是我')
+                // console.log('10秒后显示：下一个发言人是我')
               }, 10000)
             }
           } else if (nextSpeakerResult.success && nextSpeakerResult.speaker_type === 'user') {
@@ -648,7 +703,7 @@ export default {
             }
             speakerDisplayTimer.value = setTimeout(() => {
               nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
-              console.log('10秒后显示：下一个发言人是我')
+              // console.log('10秒后显示：下一个发言人是我')
             }, 10000)
           } else {
             console.log('无法确定下一个发言者，默认轮到用户')
@@ -659,7 +714,7 @@ export default {
             }
             speakerDisplayTimer.value = setTimeout(() => {
               nextSpeaker.value = '我' // 10秒后设置下一个发言人为用户
-              console.log('10秒后显示：下一个发言人是我')
+              // console.log('10秒后显示：下一个发言人是我')
             }, 10000)
           }
         }
@@ -1065,6 +1120,15 @@ export default {
         speakerDisplayTimer.value = null
       }
       
+      // 清理对话显示计时器
+      if (dialogueTimer.value) {
+        clearTimeout(dialogueTimer.value)
+        dialogueTimer.value = null
+      }
+      
+      // 清理图片更新计时器
+      stopImageAutoUpdate()
+      
       // 如果正在录音，停止录音
       if (isRecording.value) {
         try {
@@ -1130,8 +1194,8 @@ export default {
         const result = await apiService.generateSceneImage()
         
         if (result.success) {
-          // 更新场景图片URL
-          sceneImageUrl.value = apiService.getSceneImageUrl()
+          // 获取最新的场景图片
+          await checkLatestImage()
           ElMessage.success('场景图片生成成功！')
         } else {
           ElMessage.error(result.error || '场景图片生成失败')
@@ -1171,16 +1235,60 @@ export default {
       }, 10000)
     }
 
-    // 隐藏对话overlay
+    // 隐藏对话内容
     const hideDialogue = () => {
-      if (dialogueTimer.value) {
-        clearTimeout(dialogueTimer.value)
-        dialogueTimer.value = null
-      }
       showDialogueOverlay.value = false
       currentDialogue.value = ''
       currentSpeakerName.value = ''
       currentSpeakerAvatar.value = ''
+    }
+
+    // 检查并更新最新场景图片
+    const checkLatestImage = async () => {
+      if (!isScriptReady.value) {
+        return
+      }
+      
+      try {
+        const result = await apiService.getLatestSceneImage()
+        
+        if (result.success && result.image_url) {
+          const newImageUrl = apiService.api.defaults.baseURL + result.image_url
+          
+          // 检查图片是否有更新
+          if (newImageUrl !== lastImageUrl.value) {
+            console.log('🖼️ 检测到新的场景图片，正在更新...')
+            sceneImageUrl.value = newImageUrl
+            lastImageUrl.value = newImageUrl
+          }
+        }
+      } catch (error) {
+        // 静默失败，不显示错误信息，避免影响用户体验
+        console.log('检查最新图片时出错:', error.message)
+      }
+    }
+
+    // 启动图片自动更新检查
+    const startImageAutoUpdate = () => {
+      if (imageUpdateTimer.value) {
+        clearInterval(imageUpdateTimer.value)
+      }
+      
+      // 每10秒检查一次是否有新图片
+      imageUpdateTimer.value = setInterval(() => {
+        checkLatestImage()
+      }, 10000)
+      
+      console.log('🔄 已启动场景图片自动更新检查')
+    }
+
+    // 停止图片自动更新检查
+    const stopImageAutoUpdate = () => {
+      if (imageUpdateTimer.value) {
+        clearInterval(imageUpdateTimer.value)
+        imageUpdateTimer.value = null
+        console.log('⏹️ 已停止场景图片自动更新检查')
+      }
     }
 
     return {
@@ -1205,6 +1313,13 @@ export default {
       userCharacter,
       userCharacterInfo,
       hasUserCharacter,
+      // 新增的场景图片和对话相关变量
+      sceneImageUrl,
+      generatingImage,
+      showDialogueOverlay,
+      currentDialogue,
+      currentSpeakerName,
+      currentSpeakerAvatar,
       loadHistory,
       loadUserCharacter,
       resetUserCharacter,
@@ -1233,7 +1348,10 @@ export default {
       getOptionType,
       generateSceneImage,
       showDialogue,
-      hideDialogue
+      hideDialogue,
+      checkLatestImage,
+      startImageAutoUpdate,
+      stopImageAutoUpdate
     }
   }
 }
@@ -1245,20 +1363,106 @@ export default {
   margin: 0 auto;
 }
 
-.chat-card {
+.scene-card {
   height: calc(100vh - 140px);
 }
 
-.chat-card :deep(.el-card__body) {
-  height: calc(100vh - 140px - 60px); /* 减去header高度 */
+.scene-card :deep(.el-card__body) {
+  height: calc(100vh - 140px - 60px);
   padding: 0;
 }
 
-.chat-container {
-  position: relative; /* 为绝对定位的子元素提供定位上下文 */
-  height: 100%; /* 填满卡片body的全部高度 */
+.scene-container {
+  position: relative;
+  height: 100%;
   box-sizing: border-box;
 }
+
+/* 场景背景图片 */
+.scene-background {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 场景占位符 */
+.scene-placeholder {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  border-radius: 8px;
+}
+
+/* 场景空状态 */
+.scene-empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 30px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+/* 透明对话显示容器 */
+.dialogue-overlay {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 16px;
+  padding: 20px;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  z-index: 10;
+  transform: translateY(100px);
+  opacity: 0;
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.dialogue-overlay.fade-in {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.dialogue-content {
+  color: white;
+}
+
+.speaker-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.speaker-name {
+  font-size: 16px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.dialogue-text {
+  font-size: 18px;
+  line-height: 1.6;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+
 
 .chat-header {
   display: flex;
@@ -1346,14 +1550,6 @@ export default {
   opacity: 0.8;
 }
 
-.speaker-name {
-  font-weight: bold;
-}
-
-.message-text {
-  line-height: 1.5;
-}
-
 .typing-indicator {
   display: flex;
   gap: 12px;
@@ -1379,102 +1575,6 @@ export default {
 
 .typing-dots span:nth-child(3) {
   animation-delay: 0.4s;
-}
-
-.message-input {
-  position: absolute;
-  bottom: 16px;
-  left: 16px;
-  right: 16px;
-  height: calc(30% - 24px); /* 30%减去上下边距 */
-  border-top: 2px solid #e4e7ed;
-  padding: 16px;
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
-  box-sizing: border-box;
-}
-
-.input-wrapper {
-  margin-bottom: 12px;
-}
-
-.input-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 12px;
-}
-
-.input-tips {
-  display: flex;
-  gap: 16px;
-  font-size: 12px;
-  color: #909399;
-}
-
-.round-info {
-  font-weight: bold;
-  color: #409EFF;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.action-buttons .el-button--warning {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  border-color: #f59e0b;
-  color: white;
-  transition: all 0.3s ease;
-}
-
-.action-buttons .el-button--warning:hover {
-  background: linear-gradient(135deg, #d97706, #b45309);
-  border-color: #d97706;
-  transform: translateY(-1px);
-}
-
-.action-buttons .el-button--warning.is-loading {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  border-color: #ef4444;
-}
-
-.action-buttons .el-button--danger {
-  background: linear-gradient(135deg, #ef4444, #dc2626);
-  border-color: #ef4444;
-  color: white;
-  transition: all 0.3s ease;
-  animation: recording-pulse 1.5s infinite;
-}
-
-.action-buttons .el-button--danger:hover {
-  background: linear-gradient(135deg, #dc2626, #b91c1c);
-  border-color: #dc2626;
-  transform: translateY(-1px);
-}
-
-.action-buttons .el-button--info {
-  background: linear-gradient(135deg, #909399, #73767a);
-  border-color: #909399;
-  color: white;
-  transition: all 0.3s ease;
-}
-
-.action-buttons .el-button--info:hover {
-  background: linear-gradient(135deg, #73767a, #606266);
-  border-color: #73767a;
-  transform: translateY(-1px);
-}
-
-@keyframes recording-pulse {
-  0%, 100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(239, 68, 68, 0);
-  }
 }
 
 .info-panel {
@@ -1660,6 +1760,54 @@ export default {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
   }
+}
+
+/* 右侧输入框区域样式 */
+.message-input-section {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #EBEEF5;
+}
+
+.message-input-section .message-input {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.message-input-section .input-wrapper {
+  margin-bottom: 10px;
+}
+
+.message-input-section .input-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-input-section .input-tips {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #909399;
+}
+
+.message-input-section .action-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.message-input-section .send-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.message-input-section .el-button {
+  font-size: 12px;
+  padding: 6px 12px;
 }
 
 /* 响应式设计 */
